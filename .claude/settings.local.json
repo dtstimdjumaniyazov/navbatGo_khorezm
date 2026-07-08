@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell($psql = \"C:\\\\Users\\\\User\\\\Documents\\\\GitHub\\\\navbatGo_khorezm_bot\\\\..\\\\..\\\\..\\\\..\\\\..\\\\Program Files\\\\PostgreSQL\\\\17\\\\bin\\\\psql.exe\"; $psql = \"C:\\\\Program Files\\\\PostgreSQL\\\\17\\\\bin\\\\psql.exe\"; foreach \\($pwd_try in \"1\",\"1234\",\"12345678\",\"admin\",\"root\",\"postgres123\",\"0000\"\\) { $env:PGPASSWORD = $pwd_try; & $psql -U postgres -h 127.0.0.1 -p 5434 -t -A -c \"SELECT 1;\" 2>$null | Out-Null; if \\($LASTEXITCODE -eq 0\\) { \"SUCCESS with: $pwd_try\"; break } })",
+      "PowerShell(node --version)",
+      "PowerShell(npm --version)",
+      "PowerShell($html = Invoke-WebRequest \"http://localhost:3000/\" -UseBasicParsing; \"vite dev: $\\($html.StatusCode\\)\")",
+      "PowerShell(Set-Location c:\\\\Users\\\\User\\\\Documents\\\\GitHub\\\\navbatGo_khorezm_bot; $env:PYTHONPATH = \\(Get-Location\\).Path; .\\\\.venv\\\\Scripts\\\\python.exe \"$env:TEMP\\\\fill_uz.py\")"
+    ]
+  }
+}
