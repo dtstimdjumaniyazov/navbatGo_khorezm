@@ -1,15 +1,17 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "NavbatGo",
+    "slug": "navbatgo",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "uz.navbatgo.app"
     },
     "android": {
+      "package": "uz.navbatgo.app",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -28,6 +30,12 @@
           "color": "#2563eb"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "8202880e-2e92-4903-a05b-798de95ee120"
+      }
+    },
+    "owner": "dtstimdjumaniyazov"
   }
 }
