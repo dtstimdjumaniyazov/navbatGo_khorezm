@@ -44,8 +44,14 @@ copy .env.example .env   # заполнить DB_PASSWORD и BOT_TOKEN
 & "C:\Program Files\PostgreSQL\17\bin\createdb.exe" -U postgres -h 127.0.0.1 navbatgo
 
 .\.venv\Scripts\python manage.py migrate
-.\.venv\Scripts\python manage.py seed_demo        # демо-сервис: 2 поста, 6 услуг
-.\.venv\Scripts\python manage.py createsuperuser  # для админки
+.\.venv\Scripts\python manage.py loaddata demo_data   # тестовые данные из core/fixtures/
+.\.venv\Scripts\python manage.py createsuperuser      # для админки
+
+# либо вместо loaddata — минимальный чистый набор:
+# .\.venv\Scripts\python manage.py seed_demo          # демо-сервис: 2 поста, 6 услуг
+
+# обновить фикстуру текущим содержимым базы (перед коммитом):
+# $env:PYTHONUTF8 = "1"; .\.venv\Scripts\python manage.py dumpdata core --indent 2 -o core\fixtures\demo_data.json
 ```
 
 ### 3. API-сервер
@@ -105,6 +111,33 @@ POST /api/appointments/
 ```
 
 Занятый слот → `409 Conflict` с сообщением.
+
+## Аутентификация (JWT)
+
+API закрыт: панель и будущее приложение ходят с JWT-токеном
+(`POST /api/auth/login/` → access/refresh, access живёт 12 ч,
+обновление — `/api/auth/refresh/`, профиль — `/api/auth/me/`).
+Логины мастеров создаются командой (саморегистрации нет):
+
+```powershell
+.\.venv\Scripts\python manage.py add_manager <telegram_id> --name "Имя" --login master1 --password "пароль"
+```
+
+Telegram-бот аутентификации не требует — он работает с БД напрямую
+и определяет мастеров по telegram_id.
+
+## Профили мастеров
+
+Мастер (войдя по JWT) редактирует свой профиль:
+
+- `GET/PATCH /api/profile/` — имя, «о себе», стаж, аватар (multipart);
+- `POST /api/profile/media/` — фото (файл, до 10 МБ, хранится в `media/`)
+  или видео (`video_url` — только YouTube-ссылки);
+- `DELETE /api/profile/media/{id}/` — удалить элемент галереи.
+
+Публичная витрина (без аутентификации, для клиентов):
+`GET /api/public/service-points/{id}/` — описание сервиса, адрес,
+мастера с галереями. Описание сервиса — поле `description` автосервиса.
 
 ## Режим мастера в боте
 

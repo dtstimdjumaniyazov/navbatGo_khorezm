@@ -6,3 +6,16 @@ db.sqlite3
 .idea/
 .vscode/
 staticfiles/
+
+# Загруженные файлы (аватары, фото сервисов) — живут на сервере, не в репо
+media/
+
+# Локальные, персональные настройки Claude Code — не для репозитория
+.claude/settings.local.json
+
+# Node.js / Vite / Expo
+node_modules/
+frontend/dist/
+frontend/dev-dist/
+mobile/.expo/
+mobile/dist/

@@ -9,14 +9,13 @@
   откатывается в failed). Это осознанный выбор: при аварии между коммитом
   и отправкой напоминание может потеряться, но НЕ может уйти дважды.
 """
-import asyncio
-
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
 from core.models import Appointment, Notification
+from core.services.notifications import client_channel_ready, dispatch_batch
 
 BATCH_LIMIT = 200  # за один прогон; следующий cron-запуск доберёт остальное
 
@@ -30,7 +29,7 @@ class Command(BaseCommand):
         from bot import notify  # импорт здесь, чтобы команда падала понятной ошибкой выше
 
         now = timezone.now()
-        batch: list[tuple[Notification, int, str]] = []
+        prepared: list[tuple[Notification, str]] = []
 
         with transaction.atomic():
             due = list(
@@ -50,7 +49,7 @@ class Command(BaseCommand):
                     n.save(update_fields=["status", "updated_at"])
                     continue
                 text = notify.build_text(n)
-                if not appt.client.telegram_id or text is None:
+                if text is None or not client_channel_ready(appt.client):
                     n.status = Notification.Status.FAILED
                     n.save(update_fields=["status", "updated_at"])
                     continue
@@ -58,26 +57,13 @@ class Command(BaseCommand):
                 n.status = Notification.Status.SENT
                 n.sent_at = now
                 n.save(update_fields=["status", "sent_at", "updated_at"])
-                batch.append((n, appt.client.telegram_id, text))
+                prepared.append((n, text))
 
-        if not batch:
+        if not prepared:
             self.stdout.write("Нет уведомлений к отправке.")
             return
 
-        results = asyncio.run(
-            notify.deliver([(str(n.id), tg_id, text) for n, tg_id, text in batch])
+        result = dispatch_batch(prepared)
+        self.stdout.write(
+            self.style.SUCCESS(f"Отправлено: {result['sent']}, ошибок: {result['failed']}.")
         )
-
-        sent = failed = 0
-        for n, _, _ in batch:
-            error = results.get(str(n.id))
-            if error:
-                Notification.objects.filter(pk=n.pk).update(
-                    status=Notification.Status.FAILED, sent_at=None
-                )
-                failed += 1
-                self.stderr.write(f"failed {n.id}: {error}")
-            else:
-                sent += 1
-
-        self.stdout.write(self.style.SUCCESS(f"Отправлено: {sent}, ошибок: {failed}."))

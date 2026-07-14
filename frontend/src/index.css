@@ -1,1 +1,23 @@
 @import "tailwindcss";
+
+/* Tailwind v4 больше не ставит cursor:pointer на <button> по умолчанию —
+   возвращаем старое поведение глобально (клиентская и мастерская части) */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  /* Tailwind v4 больше не красит голый `border` в серый по умолчанию — он
+     наследует currentColor (тёмный цвет текста), из-за чего рамки везде
+     выглядели резкими/чёрными. Возвращаем мягкий голубой акцент вместо
+     старого gray-200 — современнее и в цвет бренда. Явные border-* классы
+     (border-red-200 и т.п.) специфичнее и продолжают работать как обычно. */
+  *,
+  ::before,
+  ::after,
+  ::backdrop {
+    border-color: var(--color-blue-100, #dbeafe);
+  }
+}
+

@@ -1,0 +1,351 @@
+[
+{
+  "model": "core.servicepoint",
+  "pk": "a832bd33-19ab-4062-ae91-405bc0ace959",
+  "fields": {
+    "created_at": "2026-07-08T10:15:52.728Z",
+    "updated_at": "2026-07-08T17:28:00.820Z",
+    "name": "Автосервис Ургенч",
+    "address": "г.Ургенч, адрес такой то",
+    "latitude": null,
+    "longitude": null,
+    "timezone": "Asia/Tashkent",
+    "work_start": "09:00:00",
+    "work_end": "19:00:00",
+    "work_days": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "slot_buffer_minutes": 10,
+    "reminder_hours_before": 3,
+    "is_active": true
+  }
+},
+{
+  "model": "core.bay",
+  "pk": "6d9d3907-c8a8-4b72-afe0-b82f9598e066",
+  "fields": {
+    "created_at": "2026-07-08T10:15:52.732Z",
+    "updated_at": "2026-07-08T10:15:52.732Z",
+    "service_point": "a832bd33-19ab-4062-ae91-405bc0ace959",
+    "name": "Пост 1",
+    "is_active": true
+  }
+},
+{
+  "model": "core.bay",
+  "pk": "ec8348a0-3d19-469c-87e4-ab4948bcf364",
+  "fields": {
+    "created_at": "2026-07-08T10:15:52.737Z",
+    "updated_at": "2026-07-08T10:15:52.737Z",
+    "service_point": "a832bd33-19ab-4062-ae91-405bc0ace959",
+    "name": "Пост 2",
+    "is_active": true
+  }
+},
+{
+  "model": "core.service",
+  "pk": "06479834-9f8e-455e-ab0d-d42f25204dcb",
+  "fields": {
+    "created_at": "2026-07-08T10:15:52.741Z",
+    "updated_at": "2026-07-08T10:15:52.741Z",
+    "service_point": "a832bd33-19ab-4062-ae91-405bc0ace959",
+    "name": "Шиномонтаж R17+",
+    "name_uz": "Шиномонтаж R17+",
+    "service_type": "fixed",
+    "duration_minutes": 45,
+    "price": "200000.00",
+    "is_active": true
+  }
+},
+{
+  "model": "core.service",
+  "pk": "3edbb4cc-b235-4232-84f5-704bbb792430",
+  "fields": {
+    "created_at": "2026-07-08T10:15:52.743Z",
+    "updated_at": "2026-07-08T10:15:52.743Z",
+    "service_point": "a832bd33-19ab-4062-ae91-405bc0ace959",
+    "name": "Развал-схождение",
+    "name_uz": "Развал-схождение",
+    "service_type": "fixed",
+    "duration_minutes": 60,
+    "price": "250000.00",
+    "is_active": true
+  }
+},
+{
+  "model": "core.service",
+  "pk": "5e4a28f5-34bd-47dd-a0ac-646d55ec78de",
+  "fields": {
+    "created_at": "2026-07-08T10:15:52.744Z",
+    "updated_at": "2026-07-08T10:15:52.744Z",
+    "service_point": "a832bd33-19ab-4062-ae91-405bc0ace959",
+    "name": "Диагностика подвески",
+    "name_uz": "Подвеска диагностикаси",
+    "service_type": "flexible",
+    "duration_minutes": 40,
+    "price": "100000.00",
+    "is_active": true
+  }
+},
+{
+  "model": "core.service",
+  "pk": "7da1c1c9-78ec-4b1d-8cd2-8dff92aa37a9",
+  "fields": {
+    "created_at": "2026-07-08T10:15:52.738Z",
+    "updated_at": "2026-07-08T10:15:52.738Z",
+    "service_point": "a832bd33-19ab-4062-ae91-405bc0ace959",
+    "name": "Шиномонтаж R13–R16",
+    "name_uz": "Шиномонтаж R13–R16",
+    "service_type": "fixed",
+    "duration_minutes": 30,
+    "price": "150000.00",
+    "is_active": true
+  }
+},
+{
+  "model": "core.service",
+  "pk": "c0d7a8f1-f83b-4ca2-b7b6-d81b9bb50611",
+  "fields": {
+    "created_at": "2026-07-08T10:15:52.742Z",
+    "updated_at": "2026-07-08T10:15:52.742Z",
+    "service_point": "a832bd33-19ab-4062-ae91-405bc0ace959",
+    "name": "Замена масла",
+    "name_uz": "Мой алмаштириш",
+    "service_type": "fixed",
+    "duration_minutes": 30,
+    "price": "80000.00",
+    "is_active": true
+  }
+},
+{
+  "model": "core.service",
+  "pk": "c97f3496-1bb9-4bdf-be34-20b468d524fc",
+  "fields": {
+    "created_at": "2026-07-08T10:15:52.745Z",
+    "updated_at": "2026-07-08T10:15:52.745Z",
+    "service_point": "a832bd33-19ab-4062-ae91-405bc0ace959",
+    "name": "Ремонт (осмотр)",
+    "name_uz": "Таъмирлаш (кўрик)",
+    "service_type": "flexible",
+    "duration_minutes": 60,
+    "price": null,
+    "is_active": true
+  }
+},
+{
+  "model": "core.client",
+  "pk": "0a5fcce6-4f62-4019-8d3c-4c29c9e716bb",
+  "fields": {
+    "created_at": "2026-07-08T11:57:40.263Z",
+    "updated_at": "2026-07-08T11:57:40.263Z",
+    "telegram_id": null,
+    "name": "Рустам",
+    "language": "ru",
+    "phone": "+998907654321",
+    "no_show_count": 0
+  }
+},
+{
+  "model": "core.client",
+  "pk": "2605fbc9-4ba4-46ae-a8cc-d4de188b91f7",
+  "fields": {
+    "created_at": "2026-07-08T17:24:44.079Z",
+    "updated_at": "2026-07-08T17:24:44.079Z",
+    "telegram_id": 924366698,
+    "name": "Жасур",
+    "language": "uz",
+    "phone": "993445516",
+    "no_show_count": 0
+  }
+},
+{
+  "model": "core.client",
+  "pk": "4a5f05a9-9fe4-4daa-a15f-33d238c886e0",
+  "fields": {
+    "created_at": "2026-07-08T11:57:40.265Z",
+    "updated_at": "2026-07-08T11:57:40.265Z",
+    "telegram_id": 1002,
+    "name": "Тимур",
+    "language": "ru",
+    "phone": "+998935550011",
+    "no_show_count": 0
+  }
+},
+{
+  "model": "core.client",
+  "pk": "835008f1-ac93-4594-856a-2567c136618b",
+  "fields": {
+    "created_at": "2026-07-08T10:21:01.689Z",
+    "updated_at": "2026-07-08T10:21:01.689Z",
+    "telegram_id": 3171114,
+    "name": "Тимур",
+    "language": "ru",
+    "phone": "+998994443610",
+    "no_show_count": 0
+  }
+},
+{
+  "model": "core.client",
+  "pk": "a6734679-f0d1-4413-b672-fc6e34eab54d",
+  "fields": {
+    "created_at": "2026-07-08T12:04:30.932Z",
+    "updated_at": "2026-07-08T12:04:30.932Z",
+    "telegram_id": null,
+    "name": "???? ???3",
+    "language": "ru",
+    "phone": "+998900000001",
+    "no_show_count": 0
+  }
+},
+{
+  "model": "core.client",
+  "pk": "e4243c6b-d6cb-47d1-a592-bb0df960741b",
+  "fields": {
+    "created_at": "2026-07-08T11:57:40.254Z",
+    "updated_at": "2026-07-08T11:57:40.254Z",
+    "telegram_id": 1001,
+    "name": "Азиз",
+    "language": "ru",
+    "phone": "+998901234567",
+    "no_show_count": 0
+  }
+},
+{
+  "model": "core.appointment",
+  "pk": "7b2feb50-9e12-4214-b257-2419740a90a9",
+  "fields": {
+    "created_at": "2026-07-08T10:21:30.888Z",
+    "updated_at": "2026-07-08T12:42:12.545Z",
+    "client": "835008f1-ac93-4594-856a-2567c136618b",
+    "service": "7da1c1c9-78ec-4b1d-8cd2-8dff92aa37a9",
+    "bay": "6d9d3907-c8a8-4b72-afe0-b82f9598e066",
+    "start_time": "2026-07-10T04:30:00Z",
+    "estimated_end_time": "2026-07-10T05:10:00Z",
+    "actual_start": null,
+    "actual_end": null,
+    "status": "cancelled",
+    "source": "telegram",
+    "car_details": "",
+    "note": ""
+  }
+},
+{
+  "model": "core.appointment",
+  "pk": "83f6fe49-700c-4a50-bd1e-8c6715626572",
+  "fields": {
+    "created_at": "2026-07-08T11:57:40.266Z",
+    "updated_at": "2026-07-08T11:57:40.266Z",
+    "client": "0a5fcce6-4f62-4019-8d3c-4c29c9e716bb",
+    "service": "c0d7a8f1-f83b-4ca2-b7b6-d81b9bb50611",
+    "bay": "6d9d3907-c8a8-4b72-afe0-b82f9598e066",
+    "start_time": "2026-07-08T04:00:00Z",
+    "estimated_end_time": "2026-07-08T04:40:00Z",
+    "actual_start": "2026-07-08T04:00:00Z",
+    "actual_end": "2026-07-08T04:35:00Z",
+    "status": "done",
+    "source": "manual",
+    "car_details": "Kia K5",
+    "note": ""
+  }
+},
+{
+  "model": "core.appointment",
+  "pk": "89497cf0-7297-4c5a-81c2-50907eaff33a",
+  "fields": {
+    "created_at": "2026-07-08T11:59:07.075Z",
+    "updated_at": "2026-07-08T11:59:07.075Z",
+    "client": "4a5f05a9-9fe4-4daa-a15f-33d238c886e0",
+    "service": "c0d7a8f1-f83b-4ca2-b7b6-d81b9bb50611",
+    "bay": "6d9d3907-c8a8-4b72-afe0-b82f9598e066",
+    "start_time": "2026-07-08T13:00:00Z",
+    "estimated_end_time": "2026-07-08T13:40:00Z",
+    "actual_start": null,
+    "actual_end": null,
+    "status": "scheduled",
+    "source": "telegram",
+    "car_details": "",
+    "note": ""
+  }
+},
+{
+  "model": "core.appointment",
+  "pk": "a137b9e7-55f6-4fcc-a4d5-e08c635ad1e2",
+  "fields": {
+    "created_at": "2026-07-08T17:27:19.922Z",
+    "updated_at": "2026-07-08T17:28:05.236Z",
+    "client": "835008f1-ac93-4594-856a-2567c136618b",
+    "service": "5e4a28f5-34bd-47dd-a0ac-646d55ec78de",
+    "bay": "6d9d3907-c8a8-4b72-afe0-b82f9598e066",
+    "start_time": "2026-07-09T04:30:00Z",
+    "estimated_end_time": "2026-07-09T05:20:00Z",
+    "actual_start": null,
+    "actual_end": null,
+    "status": "cancelled",
+    "source": "telegram",
+    "car_details": "",
+    "note": ""
+  }
+},
+{
+  "model": "core.appointment",
+  "pk": "ce94ab4b-4813-429c-b5c0-c2bfc660dac3",
+  "fields": {
+    "created_at": "2026-07-08T17:28:16.716Z",
+    "updated_at": "2026-07-08T17:28:21.974Z",
+    "client": "835008f1-ac93-4594-856a-2567c136618b",
+    "service": "5e4a28f5-34bd-47dd-a0ac-646d55ec78de",
+    "bay": "6d9d3907-c8a8-4b72-afe0-b82f9598e066",
+    "start_time": "2026-07-09T04:00:00Z",
+    "estimated_end_time": "2026-07-09T04:50:00Z",
+    "actual_start": null,
+    "actual_end": null,
+    "status": "cancelled",
+    "source": "telegram",
+    "car_details": "",
+    "note": ""
+  }
+},
+{
+  "model": "core.appointment",
+  "pk": "e84709fa-72c6-4202-bbdf-b1f69ccca1ad",
+  "fields": {
+    "created_at": "2026-07-08T12:42:41.207Z",
+    "updated_at": "2026-07-08T12:42:41.207Z",
+    "client": "835008f1-ac93-4594-856a-2567c136618b",
+    "service": "5e4a28f5-34bd-47dd-a0ac-646d55ec78de",
+    "bay": "ec8348a0-3d19-469c-87e4-ab4948bcf364",
+    "start_time": "2026-07-08T13:00:00Z",
+    "estimated_end_time": "2026-07-08T13:50:00Z",
+    "actual_start": null,
+    "actual_end": null,
+    "status": "scheduled",
+    "source": "telegram",
+    "car_details": "",
+    "note": ""
+  }
+},
+{
+  "model": "core.appointment",
+  "pk": "f80b4ad7-7f46-4d73-a387-e4191a6316aa",
+  "fields": {
+    "created_at": "2026-07-08T11:57:40.272Z",
+    "updated_at": "2026-07-08T11:57:40.272Z",
+    "client": "e4243c6b-d6cb-47d1-a592-bb0df960741b",
+    "service": "5e4a28f5-34bd-47dd-a0ac-646d55ec78de",
+    "bay": "ec8348a0-3d19-469c-87e4-ab4948bcf364",
+    "start_time": "2026-07-08T11:27:00Z",
+    "estimated_end_time": "2026-07-08T12:37:00Z",
+    "actual_start": "2026-07-08T11:27:00Z",
+    "actual_end": null,
+    "status": "in_progress",
+    "source": "telegram",
+    "car_details": "Chevrolet Cobalt",
+    "note": ""
+  }
+}
+]

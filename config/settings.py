@@ -3,6 +3,7 @@
 
 Все чувствительные значения берутся из .env (см. .env.example).
 """
+from datetime import timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -15,6 +16,14 @@ load_dotenv(BASE_DIR / ".env")
 SECRET_KEY = os.environ.get("SECRET_KEY", "dev-insecure-key")
 DEBUG = os.environ.get("DEBUG", "True").lower() in ("1", "true", "yes")
 ALLOWED_HOSTS = ["*"] if DEBUG else os.environ.get("ALLOWED_HOSTS", "").split(",")
+
+# Доверенные origin'ы для CSRF (вход в админку через ngrok-туннель).
+# В проде — задать своим доменом через env CSRF_TRUSTED_ORIGINS.
+CSRF_TRUSTED_ORIGINS = [
+    o for o in os.environ.get("CSRF_TRUSTED_ORIGINS", "").split(",") if o
+]
+if DEBUG:
+    CSRF_TRUSTED_ORIGINS += ["https://*.ngrok-free.app"]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -84,13 +93,26 @@ USE_I18N = True
 USE_TZ = True  # в БД всё хранится в UTC
 
 STATIC_URL = "static/"
+MEDIA_URL = "media/"
+MEDIA_ROOT = BASE_DIR / "media"  # фото профилей и галерей мастеров
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
-    # MVP для одного сервиса: аутентификацию панели мастера добавим на этапе 2
-    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
+    # API закрыт: панель/приложение ходят с JWT, сессии — для browsable API в DEBUG
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "rest_framework.authentication.SessionAuthentication",
+    ],
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"]
     + (["rest_framework.renderers.BrowsableAPIRenderer"] if DEBUG else []),
+    # Анонимные эндпойнты входа через Telegram: защита от перебора кодов
+    "DEFAULT_THROTTLE_RATES": {"telegram_login": "30/min"},
+}
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(hours=12),   # рабочая смена мастера
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=30),
 }
 
 # CORS для дев-сервера React-панели; в проде — явный список доменов
@@ -101,8 +123,24 @@ else:
         o for o in os.environ.get("CORS_ALLOWED_ORIGINS", "").split(",") if o
     ]
 
+# Панель шлёт этот заголовок, чтобы бесплатный ngrok не подменял ответы
+# API своей страницей-предупреждением
+from corsheaders.defaults import default_headers  # noqa: E402
+
+CORS_ALLOW_HEADERS = (*default_headers, "ngrok-skip-browser-warning")
+
 # Шаг сетки слотов в минутах: клиенту предлагаются времена, кратные этому шагу
 SLOT_STEP_MINUTES = 30
 
 # Telegram
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
+# Username бота без @ — для deep-link входа через Telegram (t.me/<бот>?start=...)
+BOT_USERNAME = os.environ.get("BOT_USERNAME", "")
+
+# Публичный адрес самого Django-сервера (без завершающего /) — используется
+# для ссылок на публичные страницы (например /legal/privacy/) из бота
+SITE_URL = os.environ.get("SITE_URL", "http://127.0.0.1:8000").rstrip("/")
+
+# Username (без @) человека, с которым связываются владельцы автосервисов,
+# желающие подключиться к платформе — кнопка «Хочу подключить автосервис»
+PARTNER_CONTACT_USERNAME = os.environ.get("PARTNER_CONTACT_USERNAME", "")

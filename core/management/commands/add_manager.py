@@ -1,4 +1,10 @@
-"""Назначить мастера сервиса: python manage.py add_manager <telegram_id> [--name "Имя"]"""
+"""
+Назначить мастера сервиса:
+python manage.py add_manager <telegram_id> [--name "Имя"] [--login master1 --password ***]
+
+--login/--password создают аккаунт для входа в панель/приложение (JWT).
+"""
+from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand, CommandError
 
 from core.models import ServiceManager, ServicePoint
@@ -10,19 +16,41 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("telegram_id", type=int)
         parser.add_argument("--name", default="")
+        parser.add_argument("--login", default="", help="логин для панели/приложения")
+        parser.add_argument("--password", default="", help="пароль для панели/приложения")
 
     def handle(self, *args, **options):
         sp = ServicePoint.objects.filter(is_active=True).first()
         if sp is None:
             raise CommandError("Нет активного автосервиса — создайте его в админке.")
+
         manager, created = ServiceManager.objects.get_or_create(
             service_point=sp,
             telegram_id=options["telegram_id"],
             defaults={"name": options["name"]},
         )
-        if created:
-            self.stdout.write(self.style.SUCCESS(
-                f"Мастер {options['telegram_id']} назначен владельцем «{sp.name}»."
-            ))
-        else:
-            self.stdout.write("Такой мастер уже есть у этого сервиса.")
+        self.stdout.write(
+            self.style.SUCCESS(f"Мастер {options['telegram_id']} назначен владельцем «{sp.name}».")
+            if created
+            else "Такой мастер уже есть у этого сервиса."
+        )
+
+        if options["login"] and options["password"]:
+            if manager.user:
+                manager.user.set_password(options["password"])
+                manager.user.save()
+                self.stdout.write(f"Пароль для «{manager.user.username}» обновлён.")
+            else:
+                if User.objects.filter(username=options["login"]).exists():
+                    raise CommandError(f"Логин «{options['login']}» уже занят.")
+                manager.user = User.objects.create_user(
+                    username=options["login"],
+                    password=options["password"],
+                    first_name=options["name"] or manager.name,
+                )
+                manager.save(update_fields=["user", "updated_at"])
+                self.stdout.write(self.style.SUCCESS(
+                    f"Создан логин «{options['login']}» для входа в панель."
+                ))
+        elif options["login"] or options["password"]:
+            raise CommandError("Нужны оба параметра: --login и --password.")

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MINUTE_HEIGHT, generateTimeSlots, timeStrToMinutes } from '../utils';
+import { MINUTE_HEIGHT, generateTimeSlots, layoutOverlapping, timeStrToMinutes } from '../utils';
 import { Appointment, Bay } from '../types';
 import { AppointmentCard } from './AppointmentCard';
 import { useI18n } from '../i18n';
@@ -75,7 +75,9 @@ export const TimelineGrid: React.FC<Props> = ({
 
         {/* Колонки постов */}
         {bays.map((bay) => {
-          const bayAppointments = appointments.filter((a) => a.bay === bay.id);
+          const bayAppointments = layoutOverlapping(
+            appointments.filter((a) => a.bay === bay.id),
+          );
 
           return (
             <div key={bay.id} className="flex-1 min-w-[250px] border-r bg-white relative">
@@ -124,13 +126,15 @@ export const TimelineGrid: React.FC<Props> = ({
                   </div>
                 )}
 
-                {/* Карточки записей */}
-                {bayAppointments.map((app) => (
+                {/* Карточки записей (пересекающиеся — в отдельных колонках, см. layoutOverlapping) */}
+                {bayAppointments.map(({ appointment: app, col, cols }) => (
                   <AppointmentCard
                     key={app.id}
                     appointment={app}
                     timelineStartMin={workStartMin}
                     onClick={() => onAppointmentClick(app)}
+                    col={col}
+                    cols={cols}
                   />
                 ))}
               </div>

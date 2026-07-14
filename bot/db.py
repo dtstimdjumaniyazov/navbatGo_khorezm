@@ -11,7 +11,9 @@ from django.db import transaction
 
 from core.models import Appointment, Bay, Client, Service, ServiceManager, ServicePoint
 from core.services import appointments as appt_service
+from core.services.clients import get_or_create_walkin_client, normalize_phone
 from core.services.notifications import send_now
+from core.services.schedule import week_schedule
 from core.services.slots import get_available_slots
 
 APPT_RELATED = ("client", "service", "bay", "service__service_point")
@@ -28,13 +30,26 @@ def update_client(client_id, **fields) -> None:
 
 
 @sync_to_async
-def get_service_point() -> ServicePoint | None:
-    return ServicePoint.objects.filter(is_active=True).first()
+def get_service_points() -> list[ServicePoint]:
+    """Все активные автосервисы — клиент выбирает, куда записаться."""
+    return list(ServicePoint.objects.filter(is_active=True).order_by("name"))
 
 
 @sync_to_async
-def get_active_services() -> list[Service]:
-    return list(Service.objects.filter(is_active=True).select_related("service_point"))
+def get_service_point(sp_id=None) -> ServicePoint | None:
+    """Сервис по id; без id — первый активный (запасной путь для старых стейтов)."""
+    qs = ServicePoint.objects.filter(is_active=True)
+    if sp_id is not None:
+        qs = qs.filter(pk=sp_id)
+    return qs.first()
+
+
+@sync_to_async
+def get_active_services(sp: ServicePoint | None = None) -> list[Service]:
+    qs = Service.objects.filter(is_active=True).select_related("service_point")
+    if sp is not None:
+        qs = qs.filter(service_point=sp)
+    return list(qs)
 
 
 @sync_to_async
@@ -43,8 +58,8 @@ def get_service(service_id) -> Service | None:
 
 
 @sync_to_async
-def get_slots(service: Service, on_date: date):
-    return get_available_slots(service, on_date)
+def get_slots(service: Service, on_date: date, apply_lead_time: bool = True):
+    return get_available_slots(service, on_date, apply_lead_time=apply_lead_time)
 
 
 @sync_to_async
@@ -69,7 +84,7 @@ def get_my_appointments(client: Client) -> list[Appointment]:
             status__in=Appointment.ACTIVE_STATUSES,
             start_time__gte=timezone.now(),
         )
-        .select_related("service", "bay")
+        .select_related("service__service_point", "bay")
         .order_by("start_time")
     )
 
@@ -77,13 +92,66 @@ def get_my_appointments(client: Client) -> list[Appointment]:
 @sync_to_async
 def cancel_my_appointment(appointment_id, client: Client) -> Appointment | None:
     appt = (
-        Appointment.objects.select_related("service")
+        Appointment.objects.select_related("service__service_point")
         .filter(pk=appointment_id, client=client)
         .first()
     )
     if appt is None:
         return None
     return appt_service.cancel_appointment(appt)
+
+
+@sync_to_async
+def get_week_schedule(sp: ServicePoint) -> list[dict]:
+    """Итоговый график недели (база + переопределения) для клавиатур и витрины."""
+    return week_schedule(sp)
+
+
+@sync_to_async
+def get_service_profile(sp: ServicePoint) -> dict:
+    """
+    Витрина сервиса для бота: мастера (имя/био/стаж/путь к аватару),
+    пути к фото галереи и ссылки на видео. Файлы читаются с диска (MEDIA_ROOT),
+    поэтому наружу отдаются готовые пути, а не ленивые ORM-объекты.
+    """
+    managers = [
+        {
+            "name": m.name,
+            "bio": m.bio,
+            "bio_uz": m.bio_uz,
+            "experience_years": m.experience_years,
+            "avatar_path": m.avatar.path if m.avatar else None,
+        }
+        for m in sp.managers.filter(is_active=True)
+    ]
+    gallery: list[dict] = []
+    videos: list[str] = []
+    for item in sp.media.all():  # галерея — портфолио сервиса
+        if item.media_type == "photo" and item.image:
+            gallery.append({"path": item.image.path, "caption": item.caption})
+        elif item.media_type == "video" and item.video_url:
+            videos.append(item.video_url)
+    return {"managers": managers, "gallery": gallery, "videos": videos}
+
+
+@sync_to_async
+def get_manager_notify_targets(sp: ServicePoint) -> list[tuple[int, str, str, str]]:
+    """(telegram_id, язык, канал уведомлений, push-токен) мастеров сервиса."""
+    return list(
+        ServiceManager.objects.filter(service_point=sp, is_active=True).values_list(
+            "telegram_id", "language", "notification_channel", "push_token"
+        )
+    )
+
+
+@sync_to_async
+def set_manager_language(manager_id, lang: str) -> None:
+    ServiceManager.objects.filter(pk=manager_id).update(language=lang)
+
+
+@sync_to_async
+def mark_onboarding_seen(manager_id) -> None:
+    ServiceManager.objects.filter(pk=manager_id).update(onboarding_seen=True)
 
 
 # ---------- режим мастера ----------
@@ -156,7 +224,9 @@ MASTER_ACTIONS = {
 
 
 @sync_to_async
-def master_action(appointment_id, sp: ServicePoint, action: str) -> Appointment | None:
+def master_action(
+    appointment_id, sp: ServicePoint, action: str, reason: str = ""
+) -> Appointment | None:
     """Переход статуса через сервисный слой (инварианты те же, что в панели)."""
     appt = (
         Appointment.objects.filter(pk=appointment_id, bay__service_point=sp)
@@ -165,6 +235,11 @@ def master_action(appointment_id, sp: ServicePoint, action: str) -> Appointment 
     )
     if appt is None:
         return None
+    if action == "cancel":
+        # Отмена мастером — причина обязательна, клиент сразу узнаёт в Telegram
+        _, notifications = appt_service.cancel_by_master(appt, reason)
+        send_now(notifications)
+        return appt
     MASTER_ACTIONS[action](appt)  # BookingError пробрасывается наверх
     return appt
 
@@ -214,8 +289,9 @@ def master_create_walkin(
     sp: ServicePoint, bay_id, service_id, start_time: datetime, name: str, phone: str
 ) -> Appointment:
     """
-    Клиент «с улицы»: новый Client без telegram_id + запись source=manual
-    через тот же create_appointment (непересечение, рабочие часы — те же).
+    Клиент «с улицы»: Client без telegram_id (существующий по телефону или
+    новый) + запись source=manual через тот же create_appointment
+    (непересечение, рабочие часы — те же).
     Транзакция: при занятом слоте клиент-сирота не остаётся.
     """
     with transaction.atomic():
@@ -227,7 +303,7 @@ def master_create_walkin(
         )
         if bay is None or service is None:
             raise appt_service.BookingError("Пост или услуга не найдены.")
-        client = Client.objects.create(name=name, phone=phone)
+        client = get_or_create_walkin_client(name, phone)
         appt = appt_service.create_appointment(
             client=client,
             service=service,

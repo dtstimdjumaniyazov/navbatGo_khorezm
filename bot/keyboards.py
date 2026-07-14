@@ -8,6 +8,7 @@ from aiogram.types import (
     KeyboardButton,
     ReplyKeyboardMarkup,
 )
+from django.conf import settings
 
 from bot.i18n import svc_name, t, weekdays
 
@@ -20,16 +21,19 @@ def language_kb() -> InlineKeyboardMarkup:
 
 
 def main_menu(lang: str) -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [
-                KeyboardButton(text=t(lang, "btn_book")),
-                KeyboardButton(text=t(lang, "btn_my")),
-            ],
-            [KeyboardButton(text=t(lang, "btn_language"))],
+    rows = [
+        [
+            KeyboardButton(text=t(lang, "btn_book")),
+            KeyboardButton(text=t(lang, "btn_my")),
         ],
-        resize_keyboard=True,
-    )
+        [
+            KeyboardButton(text=t(lang, "btn_about")),
+            KeyboardButton(text=t(lang, "btn_language")),
+        ],
+    ]
+    if settings.PARTNER_CONTACT_USERNAME:
+        rows.append([KeyboardButton(text=t(lang, "btn_partner"))])
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
 def phone_request(lang: str) -> ReplyKeyboardMarkup:
@@ -41,6 +45,14 @@ def phone_request(lang: str) -> ReplyKeyboardMarkup:
         resize_keyboard=True,
         one_time_keyboard=True,
     )
+
+
+def service_points_kb(points, prefix: str) -> InlineKeyboardMarkup:
+    """Выбор автосервиса (запись — prefix «bsp», витрина — prefix «absp»)."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=p.name, callback_data=f"{prefix}:{p.id}")]
+        for p in points
+    ])
 
 
 def services_kb(services, lang: str) -> InlineKeyboardMarkup:
@@ -56,18 +68,22 @@ def services_kb(services, lang: str) -> InlineKeyboardMarkup:
                 callback_data=f"svc:{s.id}",
             )
         ])
+    # Назад: к выбору сервиса (если их несколько) или отмена записи
+    rows.append([InlineKeyboardButton(text=t(lang, "btn_back"), callback_data="back:points")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def dates_kb(service_point, lang: str, days_ahead: int = 7) -> InlineKeyboardMarkup:
-    """Ближайшие рабочие дни сервиса."""
+def dates_kb(service_point, lang: str, schedule: list[dict], days_ahead: int = 14) -> InlineKeyboardMarkup:
+    """Ближайшие рабочие дни сервиса (по итоговому графику, максимум 7 кнопок)."""
     tz = ZoneInfo(service_point.timezone)
     today = datetime.now(tz).date()
     wd = weekdays(lang)
     rows = []
     for i in range(days_ahead):
+        if len(rows) >= 7:
+            break
         d = today + timedelta(days=i)
-        if d.weekday() not in service_point.work_days:
+        if schedule[d.weekday()]["start"] is None:  # выходной
             continue
         if i == 0:
             label = t(lang, "today")

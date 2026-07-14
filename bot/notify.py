@@ -35,6 +35,13 @@ def build_text(notification: Notification) -> str | None:
         return t(lang, "notif_reminder", service=service, when=when, address=address)
     if notification.notification_type == Notification.Type.SHIFTED:
         return t(lang, "notif_shifted", service=service, when=when)
+    if notification.notification_type == Notification.Type.CANCELLED:
+        if appt.cancel_reason:
+            return t(
+                lang, "notif_cancelled_reason",
+                service=service, when=when, reason=appt.cancel_reason,
+            )
+        return t(lang, "notif_cancelled", service=service, when=when)
     return None
 
 

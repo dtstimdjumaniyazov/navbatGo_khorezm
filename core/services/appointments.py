@@ -10,7 +10,7 @@ from django.utils import timezone
 
 from core.models import Appointment, Bay, Client, Notification, Service
 from core.services.notifications import cancel_pending_notifications, schedule_reminder
-from core.services.slots import is_within_work_hours, slot_duration
+from core.services.slots import is_within_work_hours
 
 
 class BookingError(Exception):
@@ -19,6 +19,10 @@ class BookingError(Exception):
 
 class SlotTakenError(BookingError):
     """Слот уже занят (в т.ч. проигранная гонка за слот)."""
+
+
+class ClientDoubleBookingError(BookingError):
+    """У клиента уже есть активная запись на это время (в этом или другом сервисе)."""
 
 
 def _find_free_bay(service: Service, start: datetime, end: datetime, bay: Bay | None) -> Bay:
@@ -65,14 +69,30 @@ def create_appointment(
     if start_time < timezone.now():
         raise BookingError("Нельзя записаться на прошедшее время.")
 
-    if duration_minutes is not None:
-        end_time = start_time + timedelta(
-            minutes=duration_minutes + sp.slot_buffer_minutes
-        )
-    else:
-        end_time = start_time + slot_duration(service, sp)
+    # Длительность работ храним в записи отдельно от буфера: история остаётся
+    # корректной, даже если сервис потом поменяет slot_buffer_minutes
+    duration = duration_minutes if duration_minutes is not None else service.duration_minutes
+    end_time = start_time + timedelta(minutes=duration + sp.slot_buffer_minutes)
     if not is_within_work_hours(sp, start_time, end_time):
         raise BookingError("Время выходит за рамки рабочих часов сервиса.")
+
+    # Один клиент не может быть одновременно записан в двух местах (в т.ч. на
+    # разные сервисы) — раньше это никак не проверялось и позволяло записаться
+    # на одно и то же время сразу в двух автосервисах.
+    client_conflict = (
+        Appointment.objects.select_for_update()
+        .filter(
+            client=client,
+            status__in=Appointment.ACTIVE_STATUSES,
+            start_time__lt=end_time,
+            estimated_end_time__gt=start_time,
+        )
+        .exists()
+    )
+    if client_conflict:
+        raise ClientDoubleBookingError(
+            "У вас уже есть запись на это время в другом месте."
+        )
 
     chosen_bay = _find_free_bay(service, start_time, end_time, bay)
     try:
@@ -81,13 +101,15 @@ def create_appointment(
             service=service,
             bay=chosen_bay,
             start_time=start_time,
+            duration_minutes=duration,
             estimated_end_time=end_time,
             source=source,
             note=note,
             car_details=car_details,
         )
     except IntegrityError as exc:
-        # Гонка: кто-то занял слот между проверкой и вставкой — БД отбила
+        # Гонка: кто-то занял слот (или тот же клиент параллельным запросом
+        # успел записаться на пересекающееся время) между проверкой и вставкой
         raise SlotTakenError("Это время только что заняли, выберите другой слот.") from exc
     schedule_reminder(appt)
     return appt
@@ -133,13 +155,43 @@ def mark_no_show(appt: Appointment) -> Appointment:
     return appt
 
 
-def cancel_appointment(appt: Appointment) -> Appointment:
-    """Отмена клиентом (бот) или мастером."""
+def cancel_appointment(
+    appt: Appointment, cancelled_by: str = Appointment.CancelledBy.CLIENT
+) -> Appointment:
+    """Отмена клиентом (бот/сайт/приложение) или мастером."""
     _require_status(appt, Appointment.ACTIVE_STATUSES)
     appt.status = Appointment.Status.CANCELLED
-    appt.save(update_fields=["status", "updated_at"])
+    appt.cancelled_by = cancelled_by
+    appt.save(update_fields=["status", "cancelled_by", "updated_at"])
     cancel_pending_notifications(appt)
     return appt
+
+
+@transaction.atomic
+def cancel_by_master(appt: Appointment, reason: str) -> tuple[Appointment, list[Notification]]:
+    """
+    Отмена мастером: причина обязательна — попадает клиенту в уведомление
+    и в статистику отмен (метрика качества сервиса, cancelled_by=master
+    не должно засчитываться клиенту как его собственная отмена/неявка).
+    Клиенту с Telegram создаётся уведомление; отправку делает вызывающая
+    сторона через notifications.send_now() — после коммита транзакции.
+    """
+    reason = reason.strip()
+    if not reason:
+        raise BookingError("Укажите причину отмены.")
+    cancel_appointment(appt, cancelled_by=Appointment.CancelledBy.MASTER)
+    appt.cancel_reason = reason
+    appt.save(update_fields=["cancel_reason", "updated_at"])
+    notifications = []
+    if appt.client.telegram_id:
+        notifications.append(
+            Notification.objects.create(
+                appointment=appt,
+                notification_type=Notification.Type.CANCELLED,
+                scheduled_for=timezone.now(),
+            )
+        )
+    return appt, notifications
 
 
 def confirm_appointment(appt: Appointment) -> Appointment:
@@ -201,8 +253,10 @@ def extend_appointment(appt: Appointment, extra_minutes: int) -> Appointment:
             conflicts=conflicts,
         )
     appt.estimated_end_time = new_end
+    if appt.duration_minutes is not None:
+        appt.duration_minutes += extra_minutes
     try:
-        appt.save(update_fields=["estimated_end_time", "updated_at"])
+        appt.save(update_fields=["estimated_end_time", "duration_minutes", "updated_at"])
     except IntegrityError as exc:
         # Страховка exclusion-констрейнта (гонка с параллельной записью)
         raise ShiftRequired(

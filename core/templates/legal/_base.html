@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="{{ page_lang|default:'ru' }}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page_title|default:"NavbatGo" }}</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 28px 20px 60px;
+      color: #111827;
+      line-height: 1.65;
+      background: #f9fafb;
+    }
+    h1 { font-size: 1.5rem; color: #1d4ed8; margin-bottom: 4px; }
+    h2 { font-size: 1.15rem; margin-top: 2rem; border-bottom: 1px solid #dbeafe; padding-bottom: 6px; }
+    p, li { font-size: 0.96rem; }
+    /* Markdown-цитата (> ⚠️ Черновик для юриста...) — тот же вид, что раньше был у .notice */
+    blockquote {
+      background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px;
+      padding: 4px 16px; font-size: 0.88rem; color: #1e3a8a; margin: 16px 0 24px;
+    }
+    blockquote p { font-size: 0.88rem; }
+    table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.9rem; }
+    th, td { border: 1px solid #e5e7eb; padding: 8px 10px; text-align: left; vertical-align: top; }
+    th { background: #f3f4f6; }
+    a { color: #2563eb; }
+    hr { border: none; border-top: 1px solid #e5e7eb; margin-top: 32px; }
+    em { color: #6b7280; font-size: 0.85rem; }
+    .placeholder { background: #fef3c7; padding: 0 4px; border-radius: 4px; }
+    .langswitch {
+      display: block; text-align: right; margin-bottom: 4px;
+    }
+    .langswitch a {
+      font-size: 0.82rem; color: #2563eb; text-decoration: none;
+      border: 1px solid #bfdbfe; border-radius: 8px; padding: 4px 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="langswitch"><a href="{{ switch_url }}">{{ switch_label }}</a></div>
+  {% block content %}{% endblock %}
+</body>
+</html>

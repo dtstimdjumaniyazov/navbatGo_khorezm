@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Phone, Clock, Car, ChevronRight, Send, User, Loader2 } from 'lucide-react';
+import { X, Phone, Clock, Car, ChevronRight, Send, User, Loader2, AlertTriangle } from 'lucide-react';
 import { Appointment, AppointmentStatus } from '../types';
 import { formatTime } from '../utils';
 import { useI18n } from '../i18n';
@@ -10,9 +10,17 @@ interface Props {
   onClose: () => void;
   /** PATCH статуса на API; при ошибке кидает исключение — покажем его в панели */
   onUpdateStatus: (id: string, newStatus: AppointmentStatus) => Promise<void>;
+  /** Отмена требует причины — открывает модалку у родителя, а не PATCH напрямую */
+  onCancelRequest: (appointment: Appointment) => void;
 }
 
-export const SideDrawer: React.FC<Props> = ({ appointment, isOpen, onClose, onUpdateStatus }) => {
+export const SideDrawer: React.FC<Props> = ({
+  appointment,
+  isOpen,
+  onClose,
+  onUpdateStatus,
+  onCancelRequest,
+}) => {
   const { t, statuses } = useI18n();
   const [pendingStatus, setPendingStatus] = useState<AppointmentStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -21,8 +29,10 @@ export const SideDrawer: React.FC<Props> = ({ appointment, isOpen, onClose, onUp
 
   const update = async (status: AppointmentStatus) => {
     if (pendingStatus) return;
-    // Безопасные действия — без подтверждения; отмена — с подтверждением (DESIGN.md п.7.3)
-    if (status === 'cancelled' && !window.confirm(t('cancel_confirm'))) return;
+    if (status === 'cancelled') {
+      onCancelRequest(appointment);
+      return;
+    }
     setPendingStatus(status);
     setError(null);
     try {
@@ -51,7 +61,7 @@ export const SideDrawer: React.FC<Props> = ({ appointment, isOpen, onClose, onUp
 
         <div className="p-6 flex-1 overflow-y-auto">
           <div className="mb-6">
-            <h3 className="text-2xl font-bold text-gray-900 mb-1 flex items-center gap-2">
+            <h3 className="text-2xl font-bold text-gray-900 mb-1 flex items-center gap-2 flex-wrap">
               {appointment.client_name || t('no_name')}
               {appointment.source === 'telegram' ? (
                 <Send className="w-4 h-4 text-gray-400" />
@@ -59,6 +69,12 @@ export const SideDrawer: React.FC<Props> = ({ appointment, isOpen, onClose, onUp
                 <User className="w-4 h-4 text-gray-400" />
               )}
             </h3>
+            {appointment.client_no_show_count > 0 && (
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-full px-2 py-0.5 mb-1">
+                <AlertTriangle className="w-3 h-3" />
+                {t('no_show_badge').replace('{n}', String(appointment.client_no_show_count))}
+              </span>
+            )}
             {appointment.car_details && (
               <p className="text-gray-600 flex items-center gap-2">
                 <Car className="w-4 h-4" /> {appointment.car_details}

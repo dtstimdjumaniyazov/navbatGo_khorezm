@@ -7,6 +7,7 @@ from aiogram.types import BotCommand, BotCommandScopeChat, BotCommandScopeDefaul
 from asgiref.sync import sync_to_async
 from django.conf import settings
 
+from bot.auth import login_router
 from bot.handlers import router
 from bot.master import master_router
 
@@ -55,8 +56,9 @@ async def run_bot():
         raise RuntimeError("BOT_TOKEN не задан в .env — получите токен у @BotFather.")
     bot = Bot(token=settings.BOT_TOKEN, default=DefaultBotProperties(parse_mode=None))
     dp = Dispatcher()
-    # Мастер-роутер ПЕРВЫМ: его фильтр забирает апдейты мастеров целиком,
-    # клиентский роутер их не видит (и наоборот)
+    # Порядок важен: login_router до всех (иначе /start login_<код> перехватят
+    # обработчики /start), мастер-роутер до клиентского (фильтр по роли)
+    dp.include_router(login_router)
     dp.include_router(master_router)
     dp.include_router(router)
     await bot.delete_webhook(drop_pending_updates=True)

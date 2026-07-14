@@ -3,6 +3,7 @@
 сдвиг очереди. Роутер подключается РАНЬШЕ клиентского и своим фильтром
 забирает все апдейты мастеров — клиентское меню мастеру не показывается.
 
+Язык интерфейса — ServiceManager.language (RU/UZ), меняется кнопкой «🌐».
 Бот — тонкий клиент: вся бизнес-логика в core/services (та же, что у панели).
 """
 from datetime import date, timedelta
@@ -16,18 +17,18 @@ from aiogram.types import (
     CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    KeyboardButton,
     Message,
+    ReplyKeyboardMarkup,
     TelegramObject,
 )
 
 from bot import db
-from bot.i18n import t, weekdays
+from bot.i18n import btn_texts, t, weekdays
 from core.models import Appointment, ServiceManager
 from core.services.appointments import BookingError, ShiftRequired, SlotTakenError
 
 master_router = Router()
-
-LANG = "ru"  # язык мастера; uz добавим переводом словаря в bot/i18n.py
 
 STATUS_EMOJI = {
     "scheduled": "📋",
@@ -60,13 +61,38 @@ def _tz(manager: ServiceManager) -> ZoneInfo:
     return ZoneInfo(manager.service_point.timezone)
 
 
-def _menu_kb() -> InlineKeyboardMarkup:
+def _lang(manager: ServiceManager) -> str:
+    return manager.language or "ru"
+
+
+def _menu_kb(lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=t(LANG, "m_btn_today"), callback_data="mday:0")],
-        [InlineKeyboardButton(text=t(LANG, "m_btn_tomorrow"), callback_data="mday:1")],
-        [InlineKeyboardButton(text=t(LANG, "m_btn_now"), callback_data="mnow")],
-        [InlineKeyboardButton(text=t(LANG, "m_btn_add"), callback_data="madd")],
+        [InlineKeyboardButton(text=t(lang, "m_btn_today"), callback_data="mday:0")],
+        [InlineKeyboardButton(text=t(lang, "m_btn_tomorrow"), callback_data="mday:1")],
+        [InlineKeyboardButton(text=t(lang, "m_btn_now"), callback_data="mnow")],
+        [InlineKeyboardButton(text=t(lang, "m_btn_add"), callback_data="madd")],
     ])
+
+
+def _reply_kb(lang: str) -> ReplyKeyboardMarkup:
+    """
+    Постоянная клавиатура мастера. Заменяет клиентскую, которая могла
+    «залипнуть» в чате с тех пор, когда аккаунт ещё не был мастером.
+    """
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text=t(lang, "m_btn_today")),
+                KeyboardButton(text=t(lang, "m_btn_now")),
+            ],
+            [
+                KeyboardButton(text=t(lang, "m_btn_add")),
+                KeyboardButton(text=t(lang, "m_btn_menu")),
+            ],
+            [KeyboardButton(text=t(lang, "m_btn_language"))],
+        ],
+        resize_keyboard=True,
+    )
 
 
 async def _menu_text(manager: ServiceManager) -> str:
@@ -77,32 +103,31 @@ async def _menu_text(manager: ServiceManager) -> str:
     appts = await db.get_day_appointments(manager.service_point, today)
     in_progress = sum(1 for a in appts if a.status == Appointment.Status.IN_PROGRESS)
     return t(
-        LANG, "m_menu",
+        _lang(manager), "m_menu",
         name=manager.service_point.name,
         count=len(appts),
         in_progress=in_progress,
     )
 
 
-def _day_label(d: date, tz: ZoneInfo) -> str:
+def _day_label(d: date, tz: ZoneInfo, lang: str) -> str:
     from datetime import datetime
 
     today = datetime.now(tz).date()
     if d == today:
-        return f"{t(LANG, 'today')}, {d:%d.%m}"
+        return f"{t(lang, 'today')}, {d:%d.%m}"
     if d == today + timedelta(days=1):
-        return f"{t(LANG, 'tomorrow')}, {d:%d.%m}".replace(" ▶️", "")
-    from bot.i18n import weekdays
-
-    return f"{weekdays(LANG)[d.weekday()]}, {d:%d.%m}"
+        return f"{t(lang, 'tomorrow')}, {d:%d.%m}".replace(" ▶️", "")
+    return f"{weekdays(lang)[d.weekday()]}, {d:%d.%m}"
 
 
 def _day_screen(manager, appts, offset: int, on_date: date):
     """Текст списка дня + клавиатура: записи, навигация ← Сегодня →, меню."""
     tz = _tz(manager)
-    header = t(LANG, "m_day_header", date=_day_label(on_date, tz))
+    lang = _lang(manager)
+    header = t(lang, "m_day_header", date=_day_label(on_date, tz, lang))
     if not appts:
-        text = t(LANG, "m_day_empty", date=_day_label(on_date, tz))
+        text = t(lang, "m_day_empty", date=_day_label(on_date, tz, lang))
     else:
         lines = [header, ""]
         for a in appts:
@@ -124,75 +149,82 @@ def _day_screen(manager, appts, offset: int, on_date: date):
     ]
     rows.append([
         InlineKeyboardButton(text="◀️", callback_data=f"mday:{offset - 1}"),
-        InlineKeyboardButton(text=t(LANG, "m_btn_today").replace("📅 ", ""), callback_data="mday:0"),
+        InlineKeyboardButton(
+            text=t(lang, "m_btn_today").replace("📅 ", ""), callback_data="mday:0"
+        ),
         InlineKeyboardButton(text="▶️", callback_data=f"mday:{offset + 1}"),
     ])
-    rows.append([InlineKeyboardButton(text=t(LANG, "m_btn_menu"), callback_data="mmenu")])
+    rows.append([InlineKeyboardButton(text=t(lang, "m_btn_menu"), callback_data="mmenu")])
     return text, InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def _card_text(appt: Appointment, tz: ZoneInfo) -> str:
+def _card_text(appt: Appointment, tz: ZoneInfo, lang: str) -> str:
     s = appt.start_time.astimezone(tz)
     e = appt.estimated_end_time.astimezone(tz)
     client = appt.client.name or "—"
     if appt.client.phone:
         client += f" · {appt.client.phone}"
-    source_key = "m_source_telegram" if appt.source == "telegram" else "m_source_manual"
+    source_key = {
+        "telegram": "m_source_telegram",
+        "app": "m_source_app",
+    }.get(appt.source, "m_source_manual")
     lines = [
         f"🔧 {appt.service.name}",
-        t(LANG, "m_client_line", name=client),
+        t(lang, "m_client_line", name=client),
     ]
+    if appt.client.no_show_count > 0:
+        lines.append(t(lang, "m_no_show_badge", n=appt.client.no_show_count))
     if appt.car_details:
         lines.append(f"🚗 {appt.car_details}")
     lines.append(t(
-        LANG, "m_bay_time_line",
+        lang, "m_bay_time_line",
         bay=appt.bay.name, date=f"{s:%d.%m}", start=f"{s:%H:%M}", end=f"{e:%H:%M}",
     ))
     lines.append(t(
-        LANG, "m_status_line",
+        lang, "m_status_line",
         emoji=STATUS_EMOJI[appt.status], status=appt.get_status_display(),
     ))
-    lines.append(t(LANG, "m_source_line", source=t(LANG, source_key)))
+    lines.append(t(lang, "m_source_line", source=t(lang, source_key)))
     if appt.note:
         lines.append(f"📝 {appt.note}")
     return "\n".join(lines)
 
 
-def _card_kb(appt: Appointment, offset: int) -> InlineKeyboardMarkup:
+def _card_kb(appt: Appointment, offset: int, lang: str) -> InlineKeyboardMarkup:
     aid = appt.id
     rows = []
     if appt.status in (Appointment.Status.SCHEDULED, Appointment.Status.CONFIRMED):
         rows.append([InlineKeyboardButton(
-            text=t(LANG, "m_btn_start"), callback_data=f"mact:start:{aid}:{offset}"
+            text=t(lang, "m_btn_start"), callback_data=f"mact:start:{aid}:{offset}"
         )])
         rows.append([
             InlineKeyboardButton(
-                text=t(LANG, "m_btn_noshow"), callback_data=f"mconf:noshow:{aid}:{offset}"
+                text=t(lang, "m_btn_noshow"), callback_data=f"mconf:noshow:{aid}:{offset}"
             ),
             InlineKeyboardButton(
-                text=t(LANG, "m_btn_cancel_appt"), callback_data=f"mconf:cancel:{aid}:{offset}"
+                text=t(lang, "m_btn_cancel_appt"), callback_data=f"mconf:cancel:{aid}:{offset}"
             ),
         ])
     if appt.status == Appointment.Status.IN_PROGRESS:
         rows.append([InlineKeyboardButton(
-            text=t(LANG, "m_btn_finish"), callback_data=f"mact:finish:{aid}:{offset}"
+            text=t(lang, "m_btn_finish"), callback_data=f"mact:finish:{aid}:{offset}"
         )])
         rows.append([
             InlineKeyboardButton(
-                text=t(LANG, "m_btn_extend", min=m), callback_data=f"mext:{m}:{aid}:{offset}"
+                text=t(lang, "m_btn_extend", min=m), callback_data=f"mext:{m}:{aid}:{offset}"
             )
             for m in EXTEND_PRESETS
         ])
     if appt.status in Appointment.ACTIVE_STATUSES:
         rows.append([
             InlineKeyboardButton(
-                text=t(LANG, "m_btn_shift", min=m), callback_data=f"mshift:{m}:{aid}:{offset}"
+                text=t(lang, "m_btn_shift", min=m), callback_data=f"mshift:{m}:{aid}:{offset}"
             )
             for m in EXTEND_PRESETS
         ])
     rows.append([
-        InlineKeyboardButton(text=t(LANG, "m_btn_back_day"), callback_data=f"mday:{offset}"),
-        InlineKeyboardButton(text=t(LANG, "m_btn_menu"), callback_data="mmenu"),
+        InlineKeyboardButton(text=t(lang, "m_btn_back_day"), callback_data=f"mday:{offset}"),
+        InlineKeyboardButton(text=t(lang, "m_btn_menu"), callback_data="mmenu"),
     ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
@@ -211,10 +243,11 @@ async def _show_day(callback: CallbackQuery, manager: ServiceManager, offset: in
 async def _show_card(callback: CallbackQuery, manager: ServiceManager, appointment_id, offset: int):
     appt = await db.get_sp_appointment(appointment_id, manager.service_point)
     if appt is None:
-        await callback.answer(t(LANG, "m_not_found"), show_alert=True)
+        await callback.answer(t(_lang(manager), "m_not_found"), show_alert=True)
         return
     await callback.message.edit_text(
-        _card_text(appt, _tz(manager)), reply_markup=_card_kb(appt, offset)
+        _card_text(appt, _tz(manager), _lang(manager)),
+        reply_markup=_card_kb(appt, offset, _lang(manager)),
     )
     await callback.answer()
 
@@ -225,13 +258,92 @@ async def _show_card(callback: CallbackQuery, manager: ServiceManager, appointme
 @master_router.message(Command("menu"))
 async def master_start(message: Message, manager: ServiceManager, state: FSMContext):
     await state.clear()
-    await message.answer(await _menu_text(manager), reply_markup=_menu_kb())
+    # Reply-клавиатура мастера вытесняет клиентскую (если была)
+    await message.answer(await _menu_text(manager), reply_markup=_reply_kb(_lang(manager)))
+    if not manager.onboarding_seen:
+        await message.answer(t(_lang(manager), "m_onboard_msg"))
+        await db.mark_onboarding_seen(manager.id)
 
 
 @master_router.callback_query(F.data == "mmenu")
 async def master_menu_cb(callback: CallbackQuery, manager: ServiceManager, state: FSMContext):
     await state.clear()
-    await callback.message.edit_text(await _menu_text(manager), reply_markup=_menu_kb())
+    await callback.message.edit_text(
+        await _menu_text(manager), reply_markup=_menu_kb(_lang(manager))
+    )
+    await callback.answer()
+
+
+# ---------- кнопки постоянной клавиатуры мастера ----------
+# Регистрируются раньше FSM-хендлеров: нажатие кнопки в любом состоянии
+# выходит из сценария (state.clear) и открывает нужный экран
+
+@master_router.message(F.text.in_(btn_texts("m_btn_today")))
+async def master_today_btn(message: Message, manager: ServiceManager, state: FSMContext):
+    from datetime import datetime
+
+    await state.clear()
+    on_date = datetime.now(_tz(manager)).date()
+    appts = await db.get_day_appointments(manager.service_point, on_date)
+    text, kb = _day_screen(manager, appts, 0, on_date)
+    await message.answer(text, reply_markup=kb)
+
+
+@master_router.message(F.text.in_(btn_texts("m_btn_now")))
+async def master_now_btn(message: Message, manager: ServiceManager, state: FSMContext):
+    await state.clear()
+    appt = await db.get_current_appointment(manager.service_point)
+    if appt is None:
+        await message.answer(t(_lang(manager), "m_no_current"))
+        return
+    await message.answer(
+        _card_text(appt, _tz(manager), _lang(manager)),
+        reply_markup=_card_kb(appt, 0, _lang(manager)),
+    )
+
+
+@master_router.message(F.text.in_(btn_texts("m_btn_add")))
+async def master_add_btn(message: Message, manager: ServiceManager, state: FSMContext):
+    await state.clear()
+    lang = _lang(manager)
+    bays = await db.get_active_bays(manager.service_point)
+    rows = [
+        [InlineKeyboardButton(text=b.name, callback_data=f"madd_bay:{b.id}")]
+        for b in bays
+    ]
+    rows.append(_abort_row(lang))
+    await message.answer(
+        t(lang, "m_add_bay"), reply_markup=InlineKeyboardMarkup(inline_keyboard=rows)
+    )
+
+
+@master_router.message(F.text.in_(btn_texts("m_btn_menu")))
+async def master_menu_btn(message: Message, manager: ServiceManager, state: FSMContext):
+    await state.clear()
+    await message.answer(await _menu_text(manager), reply_markup=_menu_kb(_lang(manager)))
+
+
+@master_router.message(F.text.in_(btn_texts("m_btn_language")))
+async def master_language_btn(message: Message, manager: ServiceManager, state: FSMContext):
+    await state.clear()
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="🇷🇺 Русский", callback_data="mlang:ru"),
+        InlineKeyboardButton(text="🇺🇿 Ўзбекча", callback_data="mlang:uz"),
+    ]])
+    await message.answer(t(_lang(manager), "m_lang_choose"), reply_markup=kb)
+
+
+@master_router.callback_query(F.data.startswith("mlang:"))
+async def master_language_set(callback: CallbackQuery, manager: ServiceManager):
+    lang = callback.data.removeprefix("mlang:")
+    if lang not in ("ru", "uz"):
+        await callback.answer()
+        return
+    await db.set_manager_language(manager.id, lang)
+    manager.language = lang  # объект в памяти — для текущего ответа
+    await callback.message.edit_text(t(lang, "m_lang_saved"))
+    # Новая reply-клавиатура на выбранном языке
+    await callback.message.answer(await _menu_text(manager), reply_markup=_reply_kb(lang))
     await callback.answer()
 
 
@@ -246,7 +358,7 @@ async def master_day(callback: CallbackQuery, manager: ServiceManager, state: FS
 async def master_now(callback: CallbackQuery, manager: ServiceManager):
     appt = await db.get_current_appointment(manager.service_point)
     if appt is None:
-        await callback.answer(t(LANG, "m_no_current"), show_alert=True)
+        await callback.answer(t(_lang(manager), "m_no_current"), show_alert=True)
         return
     from datetime import datetime
 
@@ -265,9 +377,10 @@ async def master_card(callback: CallbackQuery, manager: ServiceManager):
 async def master_confirm(callback: CallbackQuery, manager: ServiceManager):
     """Экран подтверждения для необратимых действий (отмена, неявка)."""
     _, action, aid, offset = callback.data.split(":")
+    lang = _lang(manager)
     appt = await db.get_sp_appointment(aid, manager.service_point)
     if appt is None:
-        await callback.answer(t(LANG, "m_not_found"), show_alert=True)
+        await callback.answer(t(lang, "m_not_found"), show_alert=True)
         return
     tz = _tz(manager)
     params = {
@@ -275,54 +388,103 @@ async def master_confirm(callback: CallbackQuery, manager: ServiceManager):
         "time": f"{appt.start_time.astimezone(tz):%d.%m %H:%M}",
     }
     key = "m_confirm_cancel" if action == "cancel" else "m_confirm_noshow"
+    # Отмену подтверждает не сразу «Да» — сначала просим причину (уйдёт клиенту)
+    yes_target = f"mcancelask:{aid}:{offset}" if action == "cancel" else f"mact:{action}:{aid}:{offset}"
     kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text=t(lang, "m_btn_yes"), callback_data=yes_target),
         InlineKeyboardButton(
-            text=t(LANG, "m_btn_yes"), callback_data=f"mact:{action}:{aid}:{offset}"
-        ),
-        InlineKeyboardButton(
-            text=t(LANG, "m_btn_no"), callback_data=f"mappt:{aid}:{offset}"
+            text=t(lang, "m_btn_no"), callback_data=f"mappt:{aid}:{offset}"
         ),
     ]])
-    await callback.message.edit_text(t(LANG, key, **params), reply_markup=kb)
+    await callback.message.edit_text(t(lang, key, **params), reply_markup=kb)
     await callback.answer()
+
+
+class CancelAppt(StatesGroup):
+    reason = State()
+
+
+@master_router.callback_query(F.data.startswith("mcancelask:"))
+async def cancel_ask_reason(callback: CallbackQuery, manager: ServiceManager, state: FSMContext):
+    _, aid, offset = callback.data.split(":")
+    await state.set_state(CancelAppt.reason)
+    await state.update_data(aid=aid, offset=offset)
+    lang = _lang(manager)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=t(lang, "m_btn_abort"), callback_data=f"mcancel_abort:{aid}:{offset}")]
+    ])
+    await callback.message.edit_text(t(lang, "m_cancel_reason_prompt"), reply_markup=kb)
+    await callback.answer()
+
+
+@master_router.callback_query(F.data.startswith("mcancel_abort:"))
+async def cancel_abort(callback: CallbackQuery, manager: ServiceManager, state: FSMContext):
+    await state.clear()
+    _, aid, offset = callback.data.split(":")
+    await _show_card(callback, manager, aid, int(offset))
+
+
+@master_router.message(CancelAppt.reason, F.text)
+async def cancel_reason_received(message: Message, manager: ServiceManager, state: FSMContext):
+    lang = _lang(manager)
+    reason = message.text.strip()
+    if not reason:
+        await message.answer(t(lang, "m_cancel_reason_empty"))
+        return
+    data = await state.get_data()
+    await state.clear()
+    try:
+        appt = await db.master_action(data["aid"], manager.service_point, "cancel", reason=reason)
+    except BookingError as exc:
+        await message.answer(str(exc))
+        return
+    if appt is None:
+        await message.answer(t(lang, "m_not_found"))
+        return
+    offset = int(data["offset"])
+    await message.answer(
+        _card_text(appt, _tz(manager), lang), reply_markup=_card_kb(appt, offset, lang)
+    )
 
 
 @master_router.callback_query(F.data.startswith("mact:"))
 async def master_act(callback: CallbackQuery, manager: ServiceManager):
     _, action, aid, offset = callback.data.split(":")
+    lang = _lang(manager)
     try:
         appt = await db.master_action(aid, manager.service_point, action)
     except BookingError as exc:
         await callback.answer(str(exc), show_alert=True)
         return
     if appt is None:
-        await callback.answer(t(LANG, "m_not_found"), show_alert=True)
+        await callback.answer(t(lang, "m_not_found"), show_alert=True)
         return
     await callback.message.edit_text(
-        _card_text(appt, _tz(manager)), reply_markup=_card_kb(appt, int(offset))
+        _card_text(appt, _tz(manager), lang), reply_markup=_card_kb(appt, int(offset), lang)
     )
-    await callback.answer(t(LANG, "m_action_done"))
+    await callback.answer(t(lang, "m_action_done"))
 
 
 @master_router.callback_query(F.data.startswith("mext:"))
 async def master_extend(callback: CallbackQuery, manager: ServiceManager):
     _, minutes, aid, offset = callback.data.split(":")
     minutes = int(minutes)
+    lang = _lang(manager)
     try:
         appt = await db.master_extend(aid, manager.service_point, minutes)
     except ShiftRequired as exc:
         # Наезд на следующие записи → предлагаем сдвиг на те же X минут
         kb = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(
-                text=t(LANG, "m_btn_shift", min=minutes),
+                text=t(lang, "m_btn_shift", min=minutes),
                 callback_data=f"mshift:{minutes}:{aid}:{offset}",
             ),
             InlineKeyboardButton(
-                text=t(LANG, "m_btn_no"), callback_data=f"mappt:{aid}:{offset}"
+                text=t(lang, "m_btn_no"), callback_data=f"mappt:{aid}:{offset}"
             ),
         ]])
         await callback.message.edit_text(
-            t(LANG, "m_extend_conflict", min=minutes, n=exc.conflicts), reply_markup=kb
+            t(lang, "m_extend_conflict", min=minutes, n=exc.conflicts), reply_markup=kb
         )
         await callback.answer()
         return
@@ -330,14 +492,14 @@ async def master_extend(callback: CallbackQuery, manager: ServiceManager):
         await callback.answer(str(exc), show_alert=True)
         return
     if appt is None:
-        await callback.answer(t(LANG, "m_not_found"), show_alert=True)
+        await callback.answer(t(lang, "m_not_found"), show_alert=True)
         return
     tz = _tz(manager)
     await callback.message.edit_text(
-        _card_text(appt, tz), reply_markup=_card_kb(appt, int(offset))
+        _card_text(appt, tz, lang), reply_markup=_card_kb(appt, int(offset), lang)
     )
     await callback.answer(
-        t(LANG, "m_extend_ok", time=f"{appt.estimated_end_time.astimezone(tz):%H:%M}")
+        t(lang, "m_extend_ok", time=f"{appt.estimated_end_time.astimezone(tz):%H:%M}")
     )
 
 
@@ -345,24 +507,25 @@ async def master_extend(callback: CallbackQuery, manager: ServiceManager):
 async def master_shift_confirm(callback: CallbackQuery, manager: ServiceManager):
     """Подтверждение перед сдвигом и рассылкой — случайно не разошлём."""
     _, minutes, aid, offset = callback.data.split(":")
+    lang = _lang(manager)
     appt = await db.get_sp_appointment(aid, manager.service_point)
     if appt is None:
-        await callback.answer(t(LANG, "m_not_found"), show_alert=True)
+        await callback.answer(t(lang, "m_not_found"), show_alert=True)
         return
     n = await db.count_shift_targets(appt)
     if n == 0:
-        await callback.answer(t(LANG, "m_shift_nothing"), show_alert=True)
+        await callback.answer(t(lang, "m_shift_nothing"), show_alert=True)
         return
     kb = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(
-            text=t(LANG, "m_btn_yes"), callback_data=f"mshiftok:{minutes}:{aid}:{offset}"
+            text=t(lang, "m_btn_yes"), callback_data=f"mshiftok:{minutes}:{aid}:{offset}"
         ),
         InlineKeyboardButton(
-            text=t(LANG, "m_btn_no"), callback_data=f"mappt:{aid}:{offset}"
+            text=t(lang, "m_btn_no"), callback_data=f"mappt:{aid}:{offset}"
         ),
     ]])
     await callback.message.edit_text(
-        t(LANG, "m_shift_confirm", n=n, min=minutes), reply_markup=kb
+        t(lang, "m_shift_confirm", n=n, min=minutes), reply_markup=kb
     )
     await callback.answer()
 
@@ -370,20 +533,21 @@ async def master_shift_confirm(callback: CallbackQuery, manager: ServiceManager)
 @master_router.callback_query(F.data.startswith("mshiftok:"))
 async def master_shift_do(callback: CallbackQuery, manager: ServiceManager):
     _, minutes, aid, offset = callback.data.split(":")
+    lang = _lang(manager)
     try:
         result = await db.master_shift(aid, manager.service_point, int(minutes))
     except BookingError as exc:
         await callback.answer(str(exc), show_alert=True)
         return
     if result is None:
-        await callback.answer(t(LANG, "m_not_found"), show_alert=True)
+        await callback.answer(t(lang, "m_not_found"), show_alert=True)
         return
     kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=t(LANG, "m_btn_back_day"), callback_data=f"mday:{offset}"),
-        InlineKeyboardButton(text=t(LANG, "m_btn_menu"), callback_data="mmenu"),
+        InlineKeyboardButton(text=t(lang, "m_btn_back_day"), callback_data=f"mday:{offset}"),
+        InlineKeyboardButton(text=t(lang, "m_btn_menu"), callback_data="mmenu"),
     ]])
     await callback.message.edit_text(
-        t(LANG, "m_shift_done", n=result["shifted"], sent=result["sent"], failed=result["failed"]),
+        t(lang, "m_shift_done", n=result["shifted"], sent=result["sent"], failed=result["failed"]),
         reply_markup=kb,
     )
     await callback.answer()
@@ -396,28 +560,31 @@ class AddWalkIn(StatesGroup):
     phone = State()
 
 
-def _abort_row() -> list[InlineKeyboardButton]:
-    return [InlineKeyboardButton(text=t(LANG, "m_btn_abort"), callback_data="madd_abort")]
+def _abort_row(lang: str) -> list[InlineKeyboardButton]:
+    return [InlineKeyboardButton(text=t(lang, "m_btn_abort"), callback_data="madd_abort")]
 
 
-def _walkin_days_kb(sp) -> InlineKeyboardMarkup:
+async def _walkin_days_kb(sp, lang: str) -> InlineKeyboardMarkup:
     from datetime import datetime
 
+    schedule = await db.get_week_schedule(sp)
     tz = ZoneInfo(sp.timezone)
     today = datetime.now(tz).date()
     rows = []
-    for i in range(7):
+    for i in range(14):
+        if len(rows) >= 7:
+            break
         d = today + timedelta(days=i)
-        if d.weekday() not in sp.work_days:
+        if schedule[d.weekday()]["start"] is None:  # выходной
             continue
         if i == 0:
-            label = t(LANG, "today")
+            label = t(lang, "today")
         elif i == 1:
-            label = t(LANG, "tomorrow")
+            label = t(lang, "tomorrow")
         else:
-            label = f"{weekdays(LANG)[d.weekday()]} {d:%d.%m}"
+            label = f"{weekdays(lang)[d.weekday()]} {d:%d.%m}"
         rows.append([InlineKeyboardButton(text=label, callback_data=f"madd_day:{d.isoformat()}")])
-    rows.append(_abort_row())
+    rows.append(_abort_row(lang))
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
@@ -427,7 +594,8 @@ async def _walkin_slots_kb(manager, data: dict) -> InlineKeyboardMarkup | None:
     if service is None:
         return None
     on_date = date.fromisoformat(data["day"])
-    slots = await db.get_slots(service, on_date)
+    # Клиент уже на месте — ограничение на онлайн-запись не нужно
+    slots = await db.get_slots(service, on_date, apply_lead_time=False)
     times = [s.start.strftime("%H:%M") for s in slots if data["bay_id"] in map(str, s.bay_ids)]
     if not times:
         return None
@@ -439,20 +607,21 @@ async def _walkin_slots_kb(manager, data: dict) -> InlineKeyboardMarkup | None:
             row = []
     if row:
         rows.append(row)
-    rows.append(_abort_row())
+    rows.append(_abort_row(_lang(manager)))
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
 @master_router.callback_query(F.data == "madd")
 async def walkin_start(callback: CallbackQuery, manager: ServiceManager, state: FSMContext):
     await state.clear()
+    lang = _lang(manager)
     bays = await db.get_active_bays(manager.service_point)
     rows = [
         [InlineKeyboardButton(text=b.name, callback_data=f"madd_bay:{b.id}")] for b in bays
     ]
-    rows.append(_abort_row())
+    rows.append(_abort_row(lang))
     await callback.message.edit_text(
-        t(LANG, "m_add_bay"), reply_markup=InlineKeyboardMarkup(inline_keyboard=rows)
+        t(lang, "m_add_bay"), reply_markup=InlineKeyboardMarkup(inline_keyboard=rows)
     )
     await callback.answer()
 
@@ -460,16 +629,18 @@ async def walkin_start(callback: CallbackQuery, manager: ServiceManager, state: 
 @master_router.callback_query(F.data.startswith("madd_bay:"))
 async def walkin_bay(callback: CallbackQuery, manager: ServiceManager, state: FSMContext):
     await state.update_data(bay_id=callback.data.split(":")[1])
-    services = await db.get_active_services()
+    lang = _lang(manager)
+    unit = "дақ." if lang == "uz" else "мин"
+    services = await db.get_active_services(manager.service_point)
     rows = [
         [InlineKeyboardButton(
-            text=f"{s.name} ({s.duration_minutes} мин)", callback_data=f"madd_svc:{s.id}"
+            text=f"{s.name} ({s.duration_minutes} {unit})", callback_data=f"madd_svc:{s.id}"
         )]
         for s in services
     ]
-    rows.append(_abort_row())
+    rows.append(_abort_row(lang))
     await callback.message.edit_text(
-        t(LANG, "m_add_service"), reply_markup=InlineKeyboardMarkup(inline_keyboard=rows)
+        t(lang, "m_add_service"), reply_markup=InlineKeyboardMarkup(inline_keyboard=rows)
     )
     await callback.answer()
 
@@ -477,8 +648,10 @@ async def walkin_bay(callback: CallbackQuery, manager: ServiceManager, state: FS
 @master_router.callback_query(F.data.startswith("madd_svc:"))
 async def walkin_service(callback: CallbackQuery, manager: ServiceManager, state: FSMContext):
     await state.update_data(service_id=callback.data.split(":")[1])
+    lang = _lang(manager)
     await callback.message.edit_text(
-        t(LANG, "m_add_day"), reply_markup=_walkin_days_kb(manager.service_point)
+        t(lang, "m_add_day"),
+        reply_markup=await _walkin_days_kb(manager.service_point, lang),
     )
     await callback.answer()
 
@@ -486,6 +659,7 @@ async def walkin_service(callback: CallbackQuery, manager: ServiceManager, state
 @master_router.callback_query(F.data.startswith("madd_day:"))
 async def walkin_day(callback: CallbackQuery, manager: ServiceManager, state: FSMContext):
     await state.update_data(day=callback.data.split(":")[1])
+    lang = _lang(manager)
     data = await state.get_data()
     kb = await _walkin_slots_kb(manager, data)
     if kb is None:
@@ -495,8 +669,8 @@ async def walkin_day(callback: CallbackQuery, manager: ServiceManager, state: FS
             None,
         )
         await callback.message.edit_text(
-            t(LANG, "m_add_no_slots", bay=bay.name if bay else "?"),
-            reply_markup=_walkin_days_kb(manager.service_point),
+            t(lang, "m_add_no_slots", bay=bay.name if bay else "?"),
+            reply_markup=await _walkin_days_kb(manager.service_point, lang),
         )
         await callback.answer()
         return
@@ -507,7 +681,7 @@ async def walkin_day(callback: CallbackQuery, manager: ServiceManager, state: FS
         None,
     )
     await callback.message.edit_text(
-        t(LANG, "m_add_time", bay=bay.name if bay else "?", date=f"{on_date:%d.%m}"),
+        t(lang, "m_add_time", bay=bay.name if bay else "?", date=f"{on_date:%d.%m}"),
         reply_markup=kb,
     )
     await callback.answer()
@@ -517,9 +691,10 @@ async def walkin_day(callback: CallbackQuery, manager: ServiceManager, state: FS
 async def walkin_time(callback: CallbackQuery, manager: ServiceManager, state: FSMContext):
     await state.update_data(time=callback.data.removeprefix("madd_tm:"))
     await state.set_state(AddWalkIn.name)
+    lang = _lang(manager)
     await callback.message.edit_text(
-        t(LANG, "m_add_name"),
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=[_abort_row()]),
+        t(lang, "m_add_name"),
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[_abort_row(lang)]),
     )
     await callback.answer()
 
@@ -528,11 +703,12 @@ async def walkin_time(callback: CallbackQuery, manager: ServiceManager, state: F
 async def walkin_name(message: Message, manager: ServiceManager, state: FSMContext):
     await state.update_data(name=message.text.strip()[:200])
     await state.set_state(AddWalkIn.phone)
+    lang = _lang(manager)
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=t(LANG, "m_btn_skip"), callback_data="madd_skip")],
-        _abort_row(),
+        [InlineKeyboardButton(text=t(lang, "m_btn_skip"), callback_data="madd_skip")],
+        _abort_row(lang),
     ])
-    await message.answer(t(LANG, "m_add_phone"), reply_markup=kb)
+    await message.answer(t(lang, "m_add_phone"), reply_markup=kb)
 
 
 async def _walkin_finalize(target: Message, manager: ServiceManager, state: FSMContext, phone: str):
@@ -541,6 +717,7 @@ async def _walkin_finalize(target: Message, manager: ServiceManager, state: FSMC
 
     data = await state.get_data()
     tz = _tz(manager)
+    lang = _lang(manager)
     start_time = datetime.combine(
         date.fromisoformat(data["day"]),
         datetime.strptime(data["time"], "%H:%M").time(),
@@ -558,22 +735,22 @@ async def _walkin_finalize(target: Message, manager: ServiceManager, state: FSMC
         kb = await _walkin_slots_kb(manager, data)
         if kb is None:
             await target.answer(
-                t(LANG, "m_add_no_slots", bay="—"),
-                reply_markup=_walkin_days_kb(manager.service_point),
+                t(lang, "m_add_no_slots", bay="—"),
+                reply_markup=await _walkin_days_kb(manager.service_point, lang),
             )
         else:
-            await target.answer(t(LANG, "m_add_slot_taken"), reply_markup=kb)
+            await target.answer(t(lang, "m_add_slot_taken"), reply_markup=kb)
         return
     except BookingError as exc:
         await state.clear()
         await target.answer(f"⚠️ {exc}")
-        await target.answer(await _menu_text(manager), reply_markup=_menu_kb())
+        await target.answer(await _menu_text(manager), reply_markup=_menu_kb(lang))
         return
     await state.clear()
     s = appt.start_time.astimezone(tz)
     await target.answer(
         t(
-            LANG, "m_add_done",
+            lang, "m_add_done",
             client=appt.client.name or "—",
             service=appt.service.name,
             bay=appt.bay.name,
@@ -581,7 +758,7 @@ async def _walkin_finalize(target: Message, manager: ServiceManager, state: FSMC
             time=f"{s:%H:%M}",
         ),
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text=t(LANG, "m_btn_menu"), callback_data="mmenu"),
+            InlineKeyboardButton(text=t(lang, "m_btn_menu"), callback_data="mmenu"),
         ]]),
     )
 
@@ -600,8 +777,9 @@ async def walkin_skip_phone(callback: CallbackQuery, manager: ServiceManager, st
 @master_router.callback_query(F.data == "madd_abort")
 async def walkin_abort(callback: CallbackQuery, manager: ServiceManager, state: FSMContext):
     await state.clear()
-    await callback.message.edit_text(await _menu_text(manager), reply_markup=_menu_kb())
-    await callback.answer(t(LANG, "m_add_aborted"))
+    lang = _lang(manager)
+    await callback.message.edit_text(await _menu_text(manager), reply_markup=_menu_kb(lang))
+    await callback.answer(t(lang, "m_add_aborted"))
 
 
 # ---------- catch-all: мастер не проваливается в клиентский роутер ----------
@@ -609,11 +787,13 @@ async def walkin_abort(callback: CallbackQuery, manager: ServiceManager, state: 
 @master_router.message()
 async def master_fallback_msg(message: Message, manager: ServiceManager, state: FSMContext):
     await state.clear()
-    await message.answer(await _menu_text(manager), reply_markup=_menu_kb())
+    await message.answer(await _menu_text(manager), reply_markup=_menu_kb(_lang(manager)))
 
 
 @master_router.callback_query()
 async def master_fallback_cb(callback: CallbackQuery, manager: ServiceManager, state: FSMContext):
     await state.clear()
-    await callback.message.answer(await _menu_text(manager), reply_markup=_menu_kb())
+    await callback.message.answer(
+        await _menu_text(manager), reply_markup=_menu_kb(_lang(manager))
+    )
     await callback.answer()

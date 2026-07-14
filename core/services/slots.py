@@ -14,6 +14,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from core.models import Appointment, Bay, Service, ServicePoint
+from core.services.schedule import day_hours
 
 
 @dataclass
@@ -45,20 +46,30 @@ def _busy_intervals_by_bay(service_point: ServicePoint, day_start: datetime, day
     return busy
 
 
-def get_available_slots(service: Service, on_date: date_cls) -> list[Slot]:
-    """Свободные слоты на дату для услуги. Пустой список, если день нерабочий."""
+def get_available_slots(
+    service: Service, on_date: date_cls, *, apply_lead_time: bool = True
+) -> list[Slot]:
+    """
+    Свободные слоты на дату для услуги. Пустой список, если день нерабочий.
+    apply_lead_time=False — для мастера (запись «с улицы»): клиент уже на
+    месте, ограничение min_lead_minutes на онлайн-запись ему не нужно.
+    """
     sp = service.service_point
-    if on_date.weekday() not in sp.work_days:
+    hours = day_hours(sp, on_date.weekday())
+    if hours is None:
         return []
 
     tz = ZoneInfo(sp.timezone)
-    day_start = datetime.combine(on_date, sp.work_start, tzinfo=tz)
-    day_end = datetime.combine(on_date, sp.work_end, tzinfo=tz)
+    day_start = datetime.combine(on_date, hours[0], tzinfo=tz)
+    day_end = datetime.combine(on_date, hours[1], tzinfo=tz)
     total = slot_duration(service, sp)
     step = timedelta(minutes=settings.SLOT_STEP_MINUTES)
 
-    # На сегодня не предлагаем прошедшее время: округляем "сейчас" вверх до сетки
+    # На сегодня не предлагаем прошедшее время (+ буфер на подготовку для
+    # онлайн-записи): округляем нижнюю границу вверх до сетки
     now = timezone.now().astimezone(tz)
+    if apply_lead_time:
+        now += timedelta(minutes=sp.min_lead_minutes)
     first_start = day_start
     if now > day_start:
         overshoot = (now - day_start) % step
@@ -84,14 +95,15 @@ def get_available_slots(service: Service, on_date: date_cls) -> list[Slot]:
 
 
 def is_within_work_hours(service_point: ServicePoint, start: datetime, end: datetime) -> bool:
-    """Проверка инварианта: слот целиком внутри рабочего дня и в рабочий день недели."""
+    """Проверка инварианта: слот целиком внутри рабочих часов этого дня."""
     tz = ZoneInfo(service_point.timezone)
     local_start = start.astimezone(tz)
     local_end = end.astimezone(tz)
-    if local_start.weekday() not in service_point.work_days:
+    hours = day_hours(service_point, local_start.weekday())
+    if hours is None:
         return False
     if local_start.date() != local_end.date() and local_end.time() != time(0, 0):
         return False  # слот не должен переваливать через полночь
-    day_open = datetime.combine(local_start.date(), service_point.work_start, tzinfo=tz)
-    day_close = datetime.combine(local_start.date(), service_point.work_end, tzinfo=tz)
+    day_open = datetime.combine(local_start.date(), hours[0], tzinfo=tz)
+    day_close = datetime.combine(local_start.date(), hours[1], tzinfo=tz)
     return day_open <= local_start and local_end <= day_close
