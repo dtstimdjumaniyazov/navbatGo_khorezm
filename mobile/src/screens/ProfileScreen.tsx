@@ -15,12 +15,34 @@ import { api, ApiError, clearTokens, legalUrls } from '../api/client';
 import { Lang, t } from '../i18n';
 import { registerForPushToken } from '../push';
 import { cardShadow, colors, radius } from '../theme';
-import { ManagerProfile, NotificationChannel, ServicePoint } from '../types';
+import { ManagerProfile, NotificationChannel, ServicePoint, WorkingHoursOverride } from '../types';
 
 interface Props {
   lang: Lang;
   onLanguageChange: (l: Lang) => void;
   onLogout: () => void;
+}
+
+// weekday бэкенда: 0=Пн … 6=Вс
+const WEEKDAY_LABELS: Record<Lang, string[]> = {
+  ru: ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'],
+  uz: ['Душ', 'Сеш', 'Чор', 'Пай', 'Жум', 'Шан', 'Якш'],
+};
+
+const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** Часы по дням недели: из существующих переопределений или из базового графика точки. */
+function buildWeekHours(point: ServicePoint): WorkingHoursOverride[] {
+  return Array.from({ length: 7 }, (_, weekday) => {
+    const override = point.working_hours?.find((h) => h.weekday === weekday);
+    if (override) return override;
+    return {
+      weekday,
+      is_closed: !point.work_days.includes(weekday),
+      work_start: point.work_start,
+      work_end: point.work_end,
+    };
+  });
 }
 
 /** Профиль мастера + настройки сервиса (Instagram, напоминания, язык). */
@@ -43,6 +65,7 @@ export const ProfileScreen: React.FC<Props> = ({ lang, onLanguageChange, onLogou
   const [channel, setChannel] = useState<NotificationChannel>('telegram');
   const [channelBusy, setChannelBusy] = useState(false);
   const [channelError, setChannelError] = useState('');
+  const [weekHours, setWeekHours] = useState<WorkingHoursOverride[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -61,6 +84,7 @@ export const ProfileScreen: React.FC<Props> = ({ lang, onLanguageChange, onLogou
         setInstagram(point.instagram);
         setRemindHours(String(point.reminder_hours_before));
         setLeadMinutes(String(point.min_lead_minutes));
+        setWeekHours(buildWeekHours(point));
       } catch (e) {
         setError(e instanceof ApiError ? e.message : t(lang, 'no_connection'));
       }
@@ -80,6 +104,17 @@ export const ProfileScreen: React.FC<Props> = ({ lang, onLanguageChange, onLogou
       setError(t(lang, 'p_lead_err'));
       return;
     }
+    for (const h of weekHours) {
+      if (h.is_closed) continue;
+      if (!h.work_start || !h.work_end || !HHMM_RE.test(h.work_start) || !HHMM_RE.test(h.work_end)) {
+        setError(t(lang, 'p_hours_format_err'));
+        return;
+      }
+      if (h.work_start >= h.work_end) {
+        setError(t(lang, 'p_hours_order_err'));
+        return;
+      }
+    }
     setSaving(true);
     setError('');
     try {
@@ -95,6 +130,7 @@ export const ProfileScreen: React.FC<Props> = ({ lang, onLanguageChange, onLogou
         instagram: instagram.trim(),
         reminder_hours_before: hours,
         min_lead_minutes: lead,
+        working_hours: weekHours,
       });
       setSavedFlash(true);
       setTimeout(() => setSavedFlash(false), 2500);
@@ -103,6 +139,10 @@ export const ProfileScreen: React.FC<Props> = ({ lang, onLanguageChange, onLogou
     } finally {
       setSaving(false);
     }
+  };
+
+  const updateDay = (weekday: number, patch: Partial<WorkingHoursOverride>) => {
+    setWeekHours((prev) => prev.map((h) => (h.weekday === weekday ? { ...h, ...patch } : h)));
   };
 
   const switchLanguage = async (l: Lang) => {
@@ -249,6 +289,44 @@ export const ProfileScreen: React.FC<Props> = ({ lang, onLanguageChange, onLogou
         />
       </View>
 
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>{t(lang, 'p_hours_title')}</Text>
+        {weekHours.map((h) => (
+          <View key={h.weekday} style={styles.hoursRow}>
+            <Text style={styles.hoursDay}>{WEEKDAY_LABELS[lang][h.weekday]}</Text>
+            <Pressable
+              style={[styles.hoursClosedBtn, h.is_closed && styles.hoursClosedBtnActive]}
+              onPress={() => updateDay(h.weekday, { is_closed: !h.is_closed })}
+            >
+              <Text style={[styles.hoursClosedText, h.is_closed && styles.hoursClosedTextActive]}>
+                {t(lang, 'p_hours_closed')}
+              </Text>
+            </Pressable>
+            {!h.is_closed && (
+              <>
+                <TextInput
+                  style={styles.hoursTimeInput}
+                  value={h.work_start?.slice(0, 5) ?? ''}
+                  onChangeText={(v) => updateDay(h.weekday, { work_start: v })}
+                  placeholder="09:00"
+                  placeholderTextColor={colors.muted}
+                  maxLength={5}
+                />
+                <Text style={styles.hoursDash}>–</Text>
+                <TextInput
+                  style={styles.hoursTimeInput}
+                  value={h.work_end?.slice(0, 5) ?? ''}
+                  onChangeText={(v) => updateDay(h.weekday, { work_end: v })}
+                  placeholder="18:00"
+                  placeholderTextColor={colors.muted}
+                  maxLength={5}
+                />
+              </>
+            )}
+          </View>
+        ))}
+      </View>
+
       {!!error && <Text style={styles.error}>{error}</Text>}
 
       <Pressable style={[styles.saveBtn, saving && styles.busy]} onPress={save}>
@@ -357,4 +435,28 @@ const styles = StyleSheet.create({
   langBtnActive: { borderColor: colors.primary, backgroundColor: '#eff6ff' },
   langText: { color: colors.muted, fontWeight: '600', fontSize: 14 },
   langTextActive: { color: colors.primary },
+  hoursRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 },
+  hoursDay: { width: 32, fontSize: 13, color: colors.text, fontWeight: '600' },
+  hoursClosedBtn: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  hoursClosedBtnActive: { borderColor: colors.danger, backgroundColor: '#fef2f2' },
+  hoursClosedText: { color: colors.muted, fontSize: 12, fontWeight: '600' },
+  hoursClosedTextActive: { color: colors.danger },
+  hoursTimeInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    fontSize: 13,
+    color: colors.text,
+    width: 64,
+    textAlign: 'center',
+  },
+  hoursDash: { color: colors.muted },
 });

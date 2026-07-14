@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Camera, Loader2, Trash2, User } from 'lucide-react';
 import { api, ApiError, legalUrls, ManagerProfile } from '../api/client';
-import { ServicePoint } from '../types';
+import { ServicePoint, WorkingHours } from '../types';
 import { useI18n } from '../i18n';
 
 interface Props {
@@ -13,6 +13,26 @@ interface Props {
 function youtubeThumb(url: string): string | null {
   const m = url.match(/(?:youtu\.be\/|v=|shorts\/|embed\/)([\w-]{6,})/);
   return m ? `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg` : null;
+}
+
+// weekday бэкенда: 0=Пн … 6=Вс (не путать с JS Date.getDay(), там 0=Вс)
+const WEEKDAY_LABELS: Record<'ru' | 'uz', string[]> = {
+  ru: ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'],
+  uz: ['Душанба', 'Сешанба', 'Чоршанба', 'Пайшанба', 'Жума', 'Шанба', 'Якшанба'],
+};
+
+/** Часы по дням недели: из существующих переопределений или из базового графика точки. */
+function buildWeekHours(sp: ServicePoint): WorkingHours[] {
+  return Array.from({ length: 7 }, (_, weekday) => {
+    const override = sp.working_hours?.find((h) => h.weekday === weekday);
+    if (override) return override;
+    return {
+      weekday,
+      is_closed: !sp.work_days.includes(weekday),
+      work_start: sp.work_start,
+      work_end: sp.work_end,
+    };
+  });
 }
 
 /** Третья вкладка: публичный профиль мастера — «о себе», фото, галерея. */
@@ -36,6 +56,9 @@ export const ProfileScreen: React.FC<Props> = ({
   );
   const [leadMinutes, setLeadMinutes] = useState(
     String(servicePoint?.min_lead_minutes ?? ''),
+  );
+  const [weekHours, setWeekHours] = useState<WorkingHours[]>(
+    servicePoint ? buildWeekHours(servicePoint) : [],
   );
   const [isSaving, setIsSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
@@ -64,8 +87,13 @@ export const ProfileScreen: React.FC<Props> = ({
     setSpAboutUz(servicePoint?.description_uz ?? '');
     setRemindHours(String(servicePoint?.reminder_hours_before ?? ''));
     setLeadMinutes(String(servicePoint?.min_lead_minutes ?? ''));
+    setWeekHours(servicePoint ? buildWeekHours(servicePoint) : []);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [servicePoint?.id]);
+
+  const updateDay = (weekday: number, patch: Partial<WorkingHours>) => {
+    setWeekHours((prev) => prev.map((h) => (h.weekday === weekday ? { ...h, ...patch } : h)));
+  };
 
   const flashSaved = () => {
     setSavedFlash(true);
@@ -84,6 +112,16 @@ export const ProfileScreen: React.FC<Props> = ({
       onError(t('p_lead_err'));
       return;
     }
+    for (const h of weekHours) {
+      if (!h.is_closed && !(h.work_start && h.work_end)) {
+        onError(t('p_hours_err'));
+        return;
+      }
+      if (!h.is_closed && h.work_start && h.work_end && h.work_start >= h.work_end) {
+        onError(t('p_hours_order_err'));
+        return;
+      }
+    }
     setIsSaving(true);
     try {
       const updated = await api.patchProfile({
@@ -98,6 +136,7 @@ export const ProfileScreen: React.FC<Props> = ({
         description_uz: spAboutUz,
         reminder_hours_before: hours,
         min_lead_minutes: lead,
+        working_hours: weekHours,
       };
       await api.patchServicePoint(profile.service_point, patch);
       onServicePointSaved(patch);
@@ -296,6 +335,45 @@ export const ProfileScreen: React.FC<Props> = ({
             onChange={(e) => setLeadMinutes(e.target.value)}
             className="w-32 border border-gray-300 rounded-md p-2"
           />
+        </div>
+      </div>
+
+      {/* График работы по дням недели — переопределяет базовые часы точки */}
+      <div className="bg-white rounded-xl border shadow-sm p-4 space-y-3">
+        <h2 className="font-bold text-gray-900">{t('p_hours_title')}</h2>
+        <div className="space-y-2">
+          {weekHours.map((h) => (
+            <div key={h.weekday} className="flex items-center gap-3 flex-wrap">
+              <span className="w-28 shrink-0 text-sm text-gray-700">
+                {WEEKDAY_LABELS[lang][h.weekday]}
+              </span>
+              <label className="flex items-center gap-1.5 text-sm text-gray-600 shrink-0">
+                <input
+                  type="checkbox"
+                  checked={h.is_closed}
+                  onChange={(e) => updateDay(h.weekday, { is_closed: e.target.checked })}
+                />
+                {t('p_hours_closed')}
+              </label>
+              {!h.is_closed && (
+                <>
+                  <input
+                    type="time"
+                    value={h.work_start?.slice(0, 5) ?? ''}
+                    onChange={(e) => updateDay(h.weekday, { work_start: e.target.value })}
+                    className="border border-gray-300 rounded-md p-1.5 text-sm"
+                  />
+                  <span className="text-gray-400">–</span>
+                  <input
+                    type="time"
+                    value={h.work_end?.slice(0, 5) ?? ''}
+                    onChange={(e) => updateDay(h.weekday, { work_end: e.target.value })}
+                    className="border border-gray-300 rounded-md p-1.5 text-sm"
+                  />
+                </>
+              )}
+            </div>
+          ))}
         </div>
         <button
           onClick={save}

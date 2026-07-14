@@ -1230,6 +1230,83 @@ class ServicePointSettingsTests(BaseSetup):
         )
         self.assertEqual(resp.status_code, 403)
 
+    # ---------- график по дням (WorkingHours) ----------
+
+    def test_patch_working_hours_creates_overrides(self):
+        resp = self.client.patch(
+            f"/api/service-points/{self.sp.id}/",
+            {
+                "working_hours": [
+                    {"weekday": 1, "is_closed": True, "work_start": None, "work_end": None},
+                    {"weekday": 2, "is_closed": False, "work_start": "10:00", "work_end": "15:00"},
+                ]
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        rows = {h.weekday: h for h in self.sp.working_hours.all()}
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(rows[1].is_closed)
+        self.assertEqual(str(rows[2].work_start), "10:00:00")
+        self.assertEqual(str(rows[2].work_end), "15:00:00")
+
+    def test_working_hours_override_affects_available_slots(self):
+        # Вторник (weekday=1) обычно рабочий (BaseSetup: work_days=[0..5]) — закрываем его
+        resp = self.client.patch(
+            f"/api/service-points/{self.sp.id}/",
+            {"working_hours": [{"weekday": 1, "is_closed": True, "work_start": None, "work_end": None}]},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        tuesday = self.day
+        while tuesday.weekday() != 1:
+            tuesday += timedelta(days=1)
+        self.assertEqual(get_available_slots(self.service, tuesday), [])
+
+    def test_patch_working_hours_replaces_previous_set(self):
+        self.client.patch(
+            f"/api/service-points/{self.sp.id}/",
+            {"working_hours": [{"weekday": 1, "is_closed": True, "work_start": None, "work_end": None}]},
+            content_type="application/json",
+        )
+        resp = self.client.patch(
+            f"/api/service-points/{self.sp.id}/",
+            {"working_hours": [{"weekday": 3, "is_closed": True, "work_start": None, "work_end": None}]},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        weekdays = list(self.sp.working_hours.values_list("weekday", flat=True))
+        self.assertEqual(weekdays, [3])  # запись за вторник заменена, не накоплена
+
+    def test_working_hours_rejects_missing_time_when_open(self):
+        resp = self.client.patch(
+            f"/api/service-points/{self.sp.id}/",
+            {"working_hours": [{"weekday": 1, "is_closed": False, "work_start": None, "work_end": None}]},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_working_hours_rejects_end_before_start(self):
+        resp = self.client.patch(
+            f"/api/service-points/{self.sp.id}/",
+            {"working_hours": [{"weekday": 1, "is_closed": False, "work_start": "18:00", "work_end": "09:00"}]},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_working_hours_rejects_duplicate_weekday(self):
+        resp = self.client.patch(
+            f"/api/service-points/{self.sp.id}/",
+            {
+                "working_hours": [
+                    {"weekday": 1, "is_closed": True, "work_start": None, "work_end": None},
+                    {"weekday": 1, "is_closed": True, "work_start": None, "work_end": None},
+                ]
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 400)
+
 
 class TenantIsolationTests(BaseSetup):
     """

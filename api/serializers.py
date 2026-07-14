@@ -8,11 +8,31 @@ from core.models import (
     ServiceManager,
     ServicePoint,
     ServicePointMedia,
+    WorkingHours,
 )
 from core.services.schedule import week_schedule
 
 
+class WorkingHoursSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WorkingHours
+        fields = ("weekday", "is_closed", "work_start", "work_end")
+
+    def validate(self, attrs):
+        if not attrs.get("is_closed") and not (attrs.get("work_start") and attrs.get("work_end")):
+            raise serializers.ValidationError(
+                "Укажите начало и конец рабочего дня или отметьте выходной."
+            )
+        if attrs.get("work_start") and attrs.get("work_end") and attrs["work_start"] >= attrs["work_end"]:
+            raise serializers.ValidationError("Начало должно быть раньше конца.")
+        return attrs
+
+
 class ServicePointSerializer(serializers.ModelSerializer):
+    # Переопределения по дням недели — пусто, если для дня нет исключения
+    # (тогда действует базовый work_days/work_start/work_end, см. core/services/schedule.py)
+    working_hours = WorkingHoursSerializer(many=True, required=False)
+
     class Meta:
         model = ServicePoint
         fields = (
@@ -20,8 +40,24 @@ class ServicePointSerializer(serializers.ModelSerializer):
             "latitude", "longitude",
             "timezone", "work_start", "work_end", "work_days",
             "slot_buffer_minutes", "reminder_hours_before", "min_lead_minutes",
-            "instagram", "is_active",
+            "instagram", "is_active", "working_hours",
         )
+
+    def update(self, instance, validated_data):
+        hours_data = validated_data.pop("working_hours", None)
+        instance = super().update(instance, validated_data)
+        if hours_data is not None:
+            weekdays = [row["weekday"] for row in hours_data]
+            if len(set(weekdays)) != len(weekdays):
+                raise serializers.ValidationError(
+                    {"working_hours": "Для одного дня недели можно указать только одну запись."}
+                )
+            # Полная замена — проще и надёжнее частичного апдейта для 7 строк
+            instance.working_hours.all().delete()
+            WorkingHours.objects.bulk_create([
+                WorkingHours(service_point=instance, **row) for row in hours_data
+            ])
+        return instance
 
 
 MAX_IMAGE_MB = 10

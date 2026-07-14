@@ -252,6 +252,7 @@ export const api = {
         | 'instagram'
         | 'reminder_hours_before'
         | 'min_lead_minutes'
+        | 'working_hours'
       >
     >,
   ) => request<ServicePoint>(`/service-points/${id}/`, { method: 'PATCH', body: data }),

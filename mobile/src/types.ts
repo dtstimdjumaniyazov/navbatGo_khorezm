@@ -144,6 +144,14 @@ export interface ManagerProfile {
   notification_channel: NotificationChannel;
 }
 
+// weekday: 0=Пн … 6=Вс. work_start/work_end пустые при is_closed.
+export interface WorkingHoursOverride {
+  weekday: number;
+  is_closed: boolean;
+  work_start: string | null;
+  work_end: string | null;
+}
+
 export interface ServicePoint {
   id: string;
   name: string;
@@ -160,6 +168,7 @@ export interface ServicePoint {
   slot_buffer_minutes: number;
   reminder_hours_before: number;
   min_lead_minutes: number;
+  working_hours: WorkingHoursOverride[];
   instagram: string;
   is_active: boolean;
 }
