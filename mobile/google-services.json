@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "360874038514",
+    "project_id": "navbatgo-1725d",
+    "storage_bucket": "navbatgo-1725d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:360874038514:android:50d8c8b320d45726c7ac6b",
+        "android_client_info": {
+          "package_name": "uz.navbatgo.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAV3dLfPzUNMTam9q2bpfnA4m4u0IGKPxs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
