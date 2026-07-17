@@ -3,7 +3,7 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
-from core.views import OfertaView, PrivacyPolicyView
+from core.views import DeleteAccountView, OfertaView, PrivacyPolicyView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -12,6 +12,8 @@ urlpatterns = [
     path("legal/privacy/uz/", PrivacyPolicyView.as_view(), {"lang": "uz"}, name="legal-privacy-uz"),
     path("legal/oferta/", OfertaView.as_view(), name="legal-oferta"),
     path("legal/oferta/uz/", OfertaView.as_view(), {"lang": "uz"}, name="legal-oferta-uz"),
+    path("legal/delete-account/", DeleteAccountView.as_view(), name="legal-delete-account"),
+    path("legal/delete-account/uz/", DeleteAccountView.as_view(), {"lang": "uz"}, name="legal-delete-account-uz"),
 ]
 
 if settings.DEBUG:

@@ -67,3 +67,14 @@ class OfertaView(LegalDocView):
     url_uz = "legal-oferta-uz"
     title_ru = "Публичная оферта — NavbatGo"
     title_uz = "Оммавий оферта — NavbatGo"
+
+
+class DeleteAccountView(LegalDocView):
+    """Публичная страница запроса удаления аккаунта — обязательное требование Google Play."""
+
+    md_ru = "delete-account.md"
+    md_uz = "delete-account.uz.md"
+    url_ru = "legal-delete-account"
+    url_uz = "legal-delete-account-uz"
+    title_ru = "Удаление аккаунта — NavbatGo"
+    title_uz = "Hisobni o'chirish — NavbatGo"
